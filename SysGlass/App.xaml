@@ -1,0 +1,12 @@
+﻿<Application x:Class="SysGlass.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:util="clr-namespace:SysGlass.Utilities"
+             ShutdownMode="OnMainWindowClose"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <util:EqualsConverter x:Key="EqualsConv"/>
+        <util:InverseBoolConverter x:Key="InverseBool"/>
+    </Application.Resources>
+</Application>
