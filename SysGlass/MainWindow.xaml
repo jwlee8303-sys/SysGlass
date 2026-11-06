@@ -83,6 +83,7 @@
                 <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="✕" ToolTip="종료" Click="OnClose"/>
                 <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="—" ToolTip="최소화" Click="OnMinimize"/>
                 <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="⚙" ToolTip="설정" Click="OnOpenSettings"/>
+                <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="📊" ToolTip="자원별 프로세스 점유 현황" Click="OnOpenProcesses"/>
             </DockPanel>
 
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">

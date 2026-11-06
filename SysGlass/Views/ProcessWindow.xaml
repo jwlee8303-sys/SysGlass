@@ -1,0 +1,192 @@
+<Window x:Class="SysGlass.Views.ProcessWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:SysGlass.ViewModels"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:ProcessListViewModel}"
+        Title="SysGlass - 자원별 프로세스 점유 현황" Width="1000" Height="640" MinWidth="720" MinHeight="360"
+        WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
+        Background="#1C1C1F" Foreground="#F2F2F2"
+        FontFamily="Segoe UI Variable Text, Segoe UI, Malgun Gothic" FontSize="13"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#F2F2F2"/>
+        </Style>
+
+        <!-- 열 머리글: 클릭하면 정렬. 오른쪽 가장자리를 끌어 너비 조절 -->
+        <Style x:Key="HeaderBase" TargetType="GridViewColumnHeader">
+            <Setter Property="Foreground" Value="#C8C8C8"/>
+            <Setter Property="Background" Value="#222226"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridViewColumnHeader">
+                        <Grid>
+                            <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="#3A3A42"
+                                    BorderThickness="0,0,1,1" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                            </Border>
+                            <Thumb x:Name="PART_HeaderGripper" HorizontalAlignment="Right" Width="8" Margin="0,0,-4,0"
+                                   Cursor="SizeWE" Background="Transparent">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb"><Border Background="Transparent"/></ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#33363D"/>
+                            </Trigger>
+                            <!-- 정렬 불가능한 열(Tag 비어 있음)은 클릭 강조를 하지 않는다 -->
+                            <Trigger Property="Tag" Value="{x:Null}">
+                                <Setter TargetName="bd" Property="Background" Value="#222226"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SortHeader" TargetType="GridViewColumnHeader" BasedOn="{StaticResource HeaderBase}">
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Tag" Value="sort"/>
+        </Style>
+
+        <Style x:Key="SortHeaderLeft" TargetType="GridViewColumnHeader" BasedOn="{StaticResource HeaderBase}">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Tag" Value="sort"/>
+        </Style>
+
+        <Style x:Key="RowStyle" TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Foreground" Value="#F2F2F2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="BorderBrush" Value="#2B2B30"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" Padding="0,5">
+                            <GridViewRowPresenter Content="{TemplateBinding Content}" Columns="{TemplateBinding GridView.ColumnCollection}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#26262B"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#33414F"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Num" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Margin" Value="8,0"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- 하단: 중요도 안내 + 상태 -->
+        <Border DockPanel.Dock="Bottom" Background="#222226" BorderBrush="#3A3A42" BorderThickness="0,1,0,0" Padding="14,8">
+            <StackPanel>
+                <WrapPanel>
+                    <TextBlock Text="중요도" Foreground="#9DA0A6" Margin="0,0,10,0"/>
+                    <TextBlock Text="● 핵심" Foreground="#FF6B6B" FontWeight="SemiBold"/>
+                    <TextBlock Text=" 종료하면 시스템이 멈추거나 재부팅됨" Foreground="#9DA0A6" Margin="0,0,14,0"/>
+                    <TextBlock Text="● 높음" Foreground="#FFB86B" FontWeight="SemiBold"/>
+                    <TextBlock Text=" 종료하면 화면·소리·보안 등 주요 기능에 장애" Foreground="#9DA0A6" Margin="0,0,14,0"/>
+                    <TextBlock Text="● 보통" Foreground="#4CC2FF" FontWeight="SemiBold"/>
+                    <TextBlock Text=" 일반 프로그램" Foreground="#9DA0A6" Margin="0,0,14,0"/>
+                    <TextBlock Text="● 낮음" Foreground="#9DA0A6" FontWeight="SemiBold"/>
+                    <TextBlock Text=" 종료해도 무방" Foreground="#9DA0A6"/>
+                </WrapPanel>
+                <TextBlock Foreground="#9DA0A6" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Text="※ 목록에 없는 프로세스의 설명·중요도는 실행 파일의 정보와 위치로 추정한 값이라 실제와 다를 수 있습니다. N/A는 읽을 수 없는 값, *는 일부 프로세스만 측정된 합계입니다."/>
+                <TextBlock Text="{Binding Status}" Foreground="#9DA0A6" FontSize="12" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <ListView x:Name="List" ItemsSource="{Binding Items}" ItemContainerStyle="{StaticResource RowStyle}"
+                  Background="Transparent" BorderThickness="0" Foreground="#F2F2F2"
+                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.ScrollUnit="Pixel"
+                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                  GridViewColumnHeader.Click="OnHeaderClick">
+            <ListView.View>
+                <GridView ColumnHeaderContainerStyle="{StaticResource HeaderBase}">
+                    <GridViewColumn x:Name="ColName" Width="200" HeaderContainerStyle="{StaticResource SortHeaderLeft}">
+                        <GridViewColumn.Header><TextBlock Text="프로세스"/></GridViewColumn.Header>
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding NameToolTip}" Margin="8,0"
+                                           TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+
+                    <GridViewColumn x:Name="ColImp" Width="76" HeaderContainerStyle="{StaticResource SortHeaderLeft}">
+                        <GridViewColumn.Header><TextBlock Text="중요도"/></GridViewColumn.Header>
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border HorizontalAlignment="Left" Margin="8,0" Padding="8,1" CornerRadius="8"
+                                        BorderThickness="1" BorderBrush="{Binding ImportanceBrush}">
+                                    <TextBlock Text="{Binding ImportanceText}" Foreground="{Binding ImportanceBrush}"
+                                               FontSize="12" FontWeight="SemiBold"/>
+                                </Border>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+
+                    <GridViewColumn x:Name="ColCpu" Width="84" HeaderContainerStyle="{StaticResource SortHeader}">
+                        <GridViewColumn.Header><TextBlock Text="CPU"/></GridViewColumn.Header>
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate><TextBlock Text="{Binding CpuText}" Style="{StaticResource Num}"/></DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+
+                    <GridViewColumn x:Name="ColGpu" Width="84" HeaderContainerStyle="{StaticResource SortHeader}">
+                        <GridViewColumn.Header><TextBlock Text="GPU"/></GridViewColumn.Header>
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate><TextBlock Text="{Binding GpuText}" Style="{StaticResource Num}"/></DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+
+                    <GridViewColumn x:Name="ColMem" Width="100" HeaderContainerStyle="{StaticResource SortHeader}">
+                        <GridViewColumn.Header><TextBlock Text="메모리"/></GridViewColumn.Header>
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate><TextBlock Text="{Binding MemoryText}" Style="{StaticResource Num}"/></DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+
+                    <GridViewColumn x:Name="ColDisk" Width="116" HeaderContainerStyle="{StaticResource SortHeader}">
+                        <GridViewColumn.Header>
+                            <TextBlock Text="디스크 I/O"
+                                       ToolTip="프로세스의 읽기+쓰기 전송량입니다. 디스크뿐 아니라 네트워크·장치 I/O도 포함됩니다."/>
+                        </GridViewColumn.Header>
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate><TextBlock Text="{Binding DiskText}" Style="{StaticResource Num}"/></DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+
+                    <GridViewColumn Header="설명" Width="460">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Description}" ToolTip="{Binding Description}" Margin="8,0"
+                                           Foreground="#C8C8C8" TextTrimming="CharacterEllipsis"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                </GridView>
+            </ListView.View>
+        </ListView>
+    </DockPanel>
+</Window>

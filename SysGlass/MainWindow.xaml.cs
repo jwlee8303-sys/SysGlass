@@ -20,6 +20,7 @@ namespace SysGlass
         private readonly HotKeyService _hotKey = new();
         private bool _clickThrough;
         private SettingsWindow? _settingsWindow;
+        private ProcessWindow? _processWindow;
 
         public event Action? ControllerStateChanged;
 
@@ -135,6 +136,7 @@ namespace SysGlass
             Topmost = on;
             _settings.AlwaysOnTop = on;
             if (_settingsWindow != null) _settingsWindow.Topmost = on;
+            if (_processWindow != null) _processWindow.Topmost = on;
             RequestSave();
             ControllerStateChanged?.Invoke();
         }
@@ -205,6 +207,33 @@ namespace SysGlass
         }
 
         private void OnOpenSettings(object sender, RoutedEventArgs e) => ShowSettings();
+
+        // ───────── 프로세스 현황 창 (중복 생성 방지) ─────────
+
+        private void ShowProcesses()
+        {
+            try
+            {
+                if (_processWindow != null)
+                {
+                    if (_processWindow.WindowState == WindowState.Minimized) _processWindow.WindowState = WindowState.Normal;
+                    _processWindow.Activate();
+                    return;
+                }
+                var win = new ProcessWindow(new ProcessListViewModel()) { Topmost = Topmost };
+                _processWindow = win;
+                win.Closed += (_, _) => _processWindow = null;
+                win.Show();
+                win.Activate();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("프로세스 현황 창 열기 실패", ex);
+                _processWindow = null;
+            }
+        }
+
+        private void OnOpenProcesses(object sender, RoutedEventArgs e) => ShowProcesses();
 
         // ───────── 위치 / 화면 ─────────
 
@@ -293,6 +322,7 @@ namespace SysGlass
             }
             _settingsService.Save(_settings);
             _settingsWindow?.Close();
+            _processWindow?.Close();
             _hotKey.Dispose();
             _tray.Dispose();
             _vm.Dispose();
