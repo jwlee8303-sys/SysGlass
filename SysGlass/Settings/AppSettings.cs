@@ -41,6 +41,8 @@ public sealed class AppSettings
     public bool ShowDiskWrite { get; set; } = true;
     public bool ShowNetDown { get; set; } = true;
     public bool ShowNetUp { get; set; } = true;
+    public bool ShowClaudeUsage { get; set; } = true;
+    public bool ShowCodexUsage { get; set; } = true;
 
     // 이전 버전 설정 파일 호환용. Normalize()에서 새 필드로 옮기고 비운다(저장되지 않음).
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? ShowDiskIo { get; set; }

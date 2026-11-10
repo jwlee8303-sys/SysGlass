@@ -66,6 +66,57 @@
             <Setter Property="Foreground" Value="#9DA0A6"/>
             <Setter Property="FontSize" Value="{DynamicResource FsLabel}"/>
         </Style>
+        <DrawingImage x:Key="TaskManagerFallbackIcon">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#203D50" Geometry="M1,2 H15 V12 H1 Z">
+                        <GeometryDrawing.Pen><Pen Brush="#76CCF5" Thickness="1"/></GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing Geometry="M2,9 H5 L7,5 9,10 11,7 H14 M5,15 H11 M8,12 V15">
+                        <GeometryDrawing.Pen><Pen Brush="#76CCF5" Thickness="1.2"/></GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+        <DrawingImage x:Key="ComputerManagementFallbackIcon">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#487FA6" Geometry="M1,2 H12 V11 H1 Z">
+                        <GeometryDrawing.Pen><Pen Brush="#B9D7EB" Thickness="1"/></GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing Geometry="M6,11 V14 M3,14 H9">
+                        <GeometryDrawing.Pen><Pen Brush="#B9D7EB" Thickness="1.5"/></GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#B5BEC8" Geometry="M10,7 H14 V8 H15 V12 H14 V13 H10 V12 H9 V8 H10 Z"/>
+                    <GeometryDrawing Brush="#38536C">
+                        <GeometryDrawing.Geometry><EllipseGeometry Center="12,10" RadiusX="1.5" RadiusY="1.5"/></GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+        <DataTemplate x:Key="AiUsageCard">
+            <StackPanel Margin="0,0,0,10">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                <ItemsControl ItemsSource="{Binding Windows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,4,0,2">
+                                <DockPanel>
+                                    <TextBlock Text="{Binding Label}" Style="{StaticResource Label}"/>
+                                    <TextBlock Text="{Binding UsageText}" HorizontalAlignment="Right"/>
+                                </DockPanel>
+                                <ProgressBar Style="{StaticResource UsageBar}" Foreground="#DCA5FF"
+                                             Value="{Binding UsedPercent, Mode=OneWay}" Margin="0,3,0,3"
+                                             Visibility="{Binding HasUsage, Converter={StaticResource BoolToVis}}"/>
+                                <TextBlock Text="{Binding ResetText}" Style="{StaticResource Label}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding Status}" Foreground="#FFD080" FontSize="{DynamicResource FsLabel}" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Updated}" Style="{StaticResource Label}" TextWrapping="Wrap"/>
+            </StackPanel>
+        </DataTemplate>
     </Window.Resources>
 
     <!-- 창 전체 Opacity 대신 배경 브러시 알파만 조절하여 글자를 선명하게 유지 -->
@@ -78,13 +129,26 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
-                <TextBlock Text="SysGlass" FontWeight="SemiBold" Foreground="#C8C8C8" VerticalAlignment="Center"/>
-                <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="✕" ToolTip="종료" Click="OnClose"/>
-                <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="—" ToolTip="최소화" Click="OnMinimize"/>
-                <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="⚙" ToolTip="설정" Click="OnOpenSettings"/>
-                <Button DockPanel.Dock="Right" Style="{StaticResource TitleButton}" Content="📊" ToolTip="자원별 프로세스 점유 현황" Click="OnOpenProcesses"/>
-            </DockPanel>
+            <Grid Grid.Row="0" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="SysGlass" FontWeight="SemiBold" Foreground="#C8C8C8" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="0,0,4,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Style="{StaticResource TitleButton}" ToolTip="작업 관리자" AutomationProperties.Name="작업 관리자" Click="OnOpenTaskManager">
+                        <Image x:Name="TaskManagerIcon" Source="{StaticResource TaskManagerFallbackIcon}" Width="16" Height="16"/>
+                    </Button>
+                    <Button Style="{StaticResource TitleButton}" ToolTip="컴퓨터 관리" AutomationProperties.Name="컴퓨터 관리" Click="OnOpenComputerManagement">
+                        <Image x:Name="ComputerManagementIcon" Source="{StaticResource ComputerManagementFallbackIcon}" Width="16" Height="16"/>
+                    </Button>
+                    <Button Style="{StaticResource TitleButton}" Content="📊" ToolTip="자원별 프로세스 점유 현황" Click="OnOpenProcesses"/>
+                    <Button Style="{StaticResource TitleButton}" Content="⚙" ToolTip="설정" Click="OnOpenSettings"/>
+                    <Button Style="{StaticResource TitleButton}" Content="—" ToolTip="최소화" Click="OnMinimize"/>
+                    <Button Style="{StaticResource TitleButton}" Content="✕" ToolTip="종료" Click="OnClose"/>
+                </StackPanel>
+            </Grid>
 
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <!-- 각 구역은 아래쪽 여백만 가지므로 숨겨진 구역은 빈 공간을 남기지 않는다 -->
@@ -181,6 +245,11 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <ContentControl Content="{Binding ClaudeUsage}" ContentTemplate="{StaticResource AiUsageCard}"
+                                    Visibility="{Binding ShowClaudeUsage, Converter={StaticResource BoolToVis}}"/>
+                    <ContentControl Content="{Binding CodexUsage}" ContentTemplate="{StaticResource AiUsageCard}"
+                                    Visibility="{Binding ShowCodexUsage, Converter={StaticResource BoolToVis}}"/>
 
                     <!-- 네트워크 -->
                     <DockPanel Margin="0,0,0,8" Visibility="{Binding ShowNetwork, Converter={StaticResource BoolToVis}}">

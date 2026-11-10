@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Media;
 using SysGlass.Models;
@@ -18,6 +19,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private readonly ISystemMonitor _monitor;
     private readonly AppSettings _settings;
     private readonly CancellationTokenSource _cts = new();
+    private readonly SemaphoreSlim _codexGate = new(1, 1);
     private readonly object _wakeLock = new();
     private CancellationTokenSource? _wake;
     private bool _wakeRequested;
@@ -47,6 +49,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     }
 
     public AppSettings Settings => _settings;
+    public AiUsageViewModel ClaudeUsage { get; } = new("Claude Code");
+    public AiUsageViewModel CodexUsage { get; } = new("Codex");
+    public bool ShowClaudeUsage => _settings.ShowClaudeUsage;
+    public bool ShowCodexUsage => _settings.ShowCodexUsage;
     public DeviceSelectionViewModel GpuSelection { get; }
     public DeviceSelectionViewModel DiskSelection { get; }
 
@@ -78,7 +84,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     public bool ShowDiskBoth => ShowDiskUsage && ShowDiskTemp;
     public bool ShowDiskSection => ShowDiskUsage || ShowDiskTemp || ShowDiskIo;
 
-    public bool HasAnything => ShowCpuBlock || ShowRamUsage || ShowGpuSection || ShowDiskSection || ShowNetwork;
+    public bool HasAnything => ShowCpuBlock || ShowRamUsage || ShowGpuSection || ShowDiskSection || ShowNetwork || ShowClaudeUsage || ShowCodexUsage;
     public bool IsEmpty => !HasAnything;
 
     /// <summary>글자 크기 배율 (작게/보통/크게)</summary>
@@ -156,6 +162,8 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         if (_started) return;
         _started = true;
         var token = _cts.Token;
+        _ = Task.Run(() => MonitorClaudeUsageAsync(token), token);
+        _ = Task.Run(() => MonitorCodexUsageAsync(token), token);
         _ = Task.Run(async () =>
         {
             while (!token.IsCancellationRequested)
@@ -189,6 +197,81 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 }
             }
         }, token);
+    }
+
+    private void PublishUsage(CancellationToken token, Action update)
+    {
+        if (!token.IsCancellationRequested)
+            Application.Current?.Dispatcher.BeginInvoke(() => { if (!token.IsCancellationRequested) update(); });
+    }
+
+    private async Task MonitorClaudeUsageAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                if (ShowClaudeUsage)
+                {
+                    try
+                    {
+                        var snapshot = await ClaudeUsageReader.ReadAsync(token);
+                        PublishUsage(token, () => ClaudeUsage.Update(snapshot));
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+                    catch (IOException ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+                    {
+                        string notice = ClaudeUsageReader.MissingCacheNotice;
+                        PublishUsage(token, () => ClaudeUsage.Fail(notice));
+                    }
+                    catch (Exception) { PublishUsage(token, () => ClaudeUsage.Fail("사용량 파일 읽기 실패 · 연결 상태 확인")); }
+                }
+                await Task.Delay(TimeSpan.FromSeconds(5), token);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private async Task MonitorCodexUsageAsync(CancellationToken token)
+    {
+        var reader = new CodexUsageReader();
+        var nextRead = DateTimeOffset.MinValue;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                if (!ShowCodexUsage) nextRead = DateTimeOffset.MinValue;
+                else
+                {
+                    if (DateTimeOffset.UtcNow >= nextRead)
+                    {
+                        try
+                        {
+                            await _codexGate.WaitAsync(token);
+                            AiUsageSnapshot snapshot;
+                            try { snapshot = await reader.ReadAsync(token); }
+                            finally { _codexGate.Release(); }
+                            PublishUsage(token, () => CodexUsage.Update(snapshot));
+                        }
+                        catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+                        catch (OperationCanceledException) { PublishUsage(token, () => CodexUsage.Fail("조회 시간 초과 · 재시도 대기")); }
+                        catch (FileNotFoundException) { PublishUsage(token, () => CodexUsage.Fail("설정에서 Codex 설치 안내를 확인하세요")); }
+                        catch (Exception) { PublishUsage(token, () => CodexUsage.Fail("설정에서 ‘Codex 연결’을 눌러주세요")); }
+                        nextRead = DateTimeOffset.UtcNow.AddMinutes(1);
+                    }
+                    PublishUsage(token, () => CodexUsage.Refresh(DateTimeOffset.UtcNow));
+                }
+                await Task.Delay(TimeSpan.FromSeconds(5), token);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    public async Task<AiUsageSnapshot> ConnectCodexAsync(Action<Uri> openBrowser, CancellationToken token)
+    {
+        await _codexGate.WaitAsync(token);
+        try { return await Task.Run(() => new CodexUsageReader().ConnectAsync(openBrowser, token), token); }
+        finally { _codexGate.Release(); }
     }
 
     private void Apply(SystemSnapshot s, SensorOptions? options)

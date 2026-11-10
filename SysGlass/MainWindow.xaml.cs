@@ -1,6 +1,12 @@
 ﻿using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Diagnostics;
+using System.IO;
+using System.Windows.Interop;
+using System.Windows.Media.Imaging;
+using System.Xml;
+using System.Xml.Linq;
 using SysGlass.Services;
 using SysGlass.Settings;
 using SysGlass.Utilities;
@@ -21,6 +27,7 @@ namespace SysGlass
         private bool _clickThrough;
         private SettingsWindow? _settingsWindow;
         private ProcessWindow? _processWindow;
+        private bool _systemToolIconsLoaded;
 
         public event Action? ControllerStateChanged;
 
@@ -43,6 +50,7 @@ namespace SysGlass
             RestorePosition();
 
             Loaded += (_, _) => { _vm.Start(); ClampToWorkArea(); };
+            Loaded += async (_, _) => await LoadSystemToolIconsAsync();
             // 창 핸들이 만들어진 뒤에만 트레이/단축키/Win32 스타일을 다룬다.
             SourceInitialized += OnSourceInitialized;
             IsVisibleChanged += (_, _) => ApplyClickThrough(); // 핸들/스타일이 바뀌었을 가능성에 대비해 재적용
@@ -52,6 +60,70 @@ namespace SysGlass
         }
 
         private IntPtr Hwnd => new System.Windows.Interop.WindowInteropHelper(this).Handle;
+
+        private async Task LoadSystemToolIconsAsync()
+        {
+            if (_systemToolIconsLoaded) return;
+            _systemToolIconsLoaded = true;
+            var icons = await Task.Run(() =>
+            {
+                string directory = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                var taskManager = ExtractToolIcon(Path.Combine(directory, "Taskmgr.exe"), 0);
+                BitmapSource? computerManagement = null;
+                try
+                {
+                    // Use the resource selected by the console itself, rather than the generic MMC file icon.
+                    using var reader = XmlReader.Create(Path.Combine(directory, "compmgmt.msc"),
+                        new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+                    var icon = XDocument.Load(reader).Descendants().FirstOrDefault(e =>
+                        e.Name.LocalName == "Icon" && e.Parent?.Name.LocalName == "VisualAttributes");
+                    if (icon?.Attribute("File")?.Value is { } file && int.TryParse(icon.Attribute("Index")?.Value, out int index))
+                        computerManagement = ExtractToolIcon(Environment.ExpandEnvironmentVariables(file), index);
+                }
+                catch (Exception ex) { Logger.Error("컴퓨터 관리 아이콘 로딩 실패", ex); }
+                return (TaskManager: taskManager, ComputerManagement: computerManagement);
+            });
+            if (icons.TaskManager is { } manager) TaskManagerIcon.Source = manager;
+            if (icons.ComputerManagement is { } management) ComputerManagementIcon.Source = management;
+        }
+
+        private static BitmapSource? ExtractToolIcon(string file, int index)
+        {
+            IntPtr icon = IntPtr.Zero;
+            try
+            {
+                if (NativeMethods.ExtractIconEx(file, index, IntPtr.Zero, out icon, 1) != 1 || icon == IntPtr.Zero) return null;
+                var bitmap = Imaging.CreateBitmapSourceFromHIcon(icon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch (Exception ex) { Logger.Error("Windows 앱 아이콘 로딩 실패", ex); return null; }
+            finally { if (icon != IntPtr.Zero) NativeMethods.DestroyIcon(icon); }
+        }
+
+        private void OnOpenTaskManager(object sender, RoutedEventArgs e) => OpenSystemTool("Taskmgr.exe", "작업 관리자");
+        private void OnOpenComputerManagement(object sender, RoutedEventArgs e) => OpenSystemTool("compmgmt.msc", "컴퓨터 관리");
+
+        private async void OpenSystemTool(string file, string title)
+        {
+            try
+            {
+                await Task.Run(() =>
+                {
+                    string directory = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                    bool console = file.EndsWith(".msc", StringComparison.OrdinalIgnoreCase);
+                    var startInfo = new ProcessStartInfo(Path.Combine(directory, console ? "mmc.exe" : file)) { UseShellExecute = true };
+                    if (console) startInfo.ArgumentList.Add(Path.Combine(directory, file));
+                    using var process = Process.Start(startInfo);
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"{title} 실행 실패", ex);
+                MessageBox.Show(this, $"{title}를 실행할 수 없습니다. Windows의 실행 권한과 파일 상태를 확인하세요.",
+                    title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
 
         // ───────── 설정 반영 ─────────
 

@@ -5,6 +5,13 @@ namespace SysGlass.Utilities;
 /// <summary>Win32 API 호출 정의.</summary>
 internal static class NativeMethods
 {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "ExtractIconExW")]
+    public static extern uint ExtractIconEx(string file, int index, IntPtr largeIcons, out IntPtr smallIcon, uint count);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DestroyIcon(IntPtr icon);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct FILETIME
     {
