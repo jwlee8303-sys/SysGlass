@@ -163,6 +163,11 @@ internal static class MemoryChecks
         check(s.MemAvailWarnPercent == 15 && s.MemAvailHighPercent == 5, "invalid lower-is-worse pair restored");
         check(s.MemKernelIntervalSec == 1 && s.MemAlertRepeatMin == 1440 && s.MemColorScheme == 1, "memory settings clamped");
 
+        // 표시 그룹 순서: 알 수 없는 키·중복 제거, 빠진 그룹은 기본 순서로 뒤에 추가
+        var order = SysGlass.Settings.AppSettings.NormalizeGroupOrder(["net", "bogus", "cpu", "net"]);
+        check(order.SequenceEqual(["net", "cpu", "ram", "memory", "gpu", "disk"]), "group order normalized");
+        check(SysGlass.Settings.AppSettings.NormalizeGroupOrder(null).SequenceEqual(SysGlass.Settings.AppSettings.DefaultGroupOrder), "missing group order uses default");
+
         // 수집 상태 → 판정 항목: 1시간 관측 전 증가량은 측정 불가이고 전체는 정상
         var defaults = new SysGlass.Settings.AppSettings();
         var state = new MemoryWatchState

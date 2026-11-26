@@ -94,13 +94,12 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     public bool ShowDiskBoth => ShowDiskUsage && ShowDiskTemp;
     public bool ShowDiskSection => ShowDiskUsage || ShowDiskTemp || ShowDiskIo;
 
-    // ── 컴팩트 보기: 막대를 숨기고 간격·큰 글씨를 줄인다 ──
+    // ── 컴팩트 보기: 위젯형 칸(원형 링 또는 배터리 캡슐)으로 표시 ──
     public bool CompactMode => _settings.CompactMode;
-    public bool ShowCpuBar => ShowCpuUsage && !CompactMode;
-    public bool ShowRamBar => !CompactMode;
-    public bool ShowGpuBar => ShowGpuUsage && !CompactMode;
-    public bool ShowVramBar => !CompactMode;
-    public bool ShowDiskBar => ShowDiskUsage && !CompactMode;
+    public bool ShowNormalView => !CompactMode;
+    /// <summary>0 = 원형 링, 1 = 배터리 캡슐</summary>
+    public int CompactStyle => _settings.CompactStyle;
+    public ObservableCollection<CompactTileViewModel> CompactTiles { get; } = [];
 
     public bool HasAnything => ShowCpuBlock || ShowRamUsage || ShowGpuSection || ShowDiskSection || ShowNetwork || ShowKernelMemory;
     public bool IsEmpty => !HasAnything;
@@ -268,6 +267,92 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         NetDownText = Format.Rate(s.NetDownBytesPerSec);
         NetUpText = Format.Rate(s.NetUpBytesPerSec);
+
+        UpdateCompactTiles(s);
+    }
+
+    private static readonly Brush CpuAccent = FrozenBrush(0x4C, 0xC2, 0xFF);
+    private static readonly Brush RamAccent = FrozenBrush(0x9C, 0xDB, 0x7F);
+    private static readonly Brush GpuAccent = FrozenBrush(0xC7, 0x9B, 0xFF);
+    private static readonly Brush VramAccent = FrozenBrush(0xE6, 0xA3, 0xFF);
+    private static readonly Brush DiskAccent = FrozenBrush(0xFF, 0xB8, 0x6B);
+
+    private static Brush FrozenBrush(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
+    private sealed record TileData(string Id, string Label, string ValueText, Brush ValueBrush, double Percent,
+        Brush Accent, string SubText, Brush SubBrush, string ToolTip);
+
+    /// <summary>
+    /// 컴팩트 보기의 칸 목록을 맞춘다. 사용률을 끈 항목은 온도를 주 값으로 보여 주고 게이지는 비운다.
+    /// 클럭·전력·디스크 I/O는 컴팩트 보기에서 툴팁으로만 제공한다.
+    /// </summary>
+    private void UpdateCompactTiles(SystemSnapshot s)
+    {
+        if (!CompactMode) { CompactTiles.Clear(); return; }
+        var normal = TempBrushes.Normal;
+        var tiles = new List<TileData>();
+
+        if (ShowCpuUsage || ShowCpuTemp)
+        {
+            string tip = string.Join("\n", new[] { CpuName, ShowCpuClock ? "클럭 " + CpuClockText : "", ShowCpuPower ? "전력 " + CpuPowerText : "" }
+                .Where(x => x.Length > 0));
+            tiles.Add(ShowCpuUsage
+                ? new("cpu", "CPU", CpuText, normal, CpuPercent, CpuAccent, ShowCpuTemp ? CpuTempText : "", CpuTempBrush, tip)
+                : new("cpu", "CPU", CpuTempText, CpuTempBrush, 0, CpuAccent, "", normal, tip));
+        }
+
+        if (ShowRamUsage)
+        {
+            string used = s.MemoryUsedBytes is { } u ? string.Format(CultureInfo.InvariantCulture, "{0:0.0} GB", u / GiB) : "";
+            tiles.Add(new("ram", "RAM", s.MemoryUsagePercent is { } p ? Format.Percent(p) : Format.NA, normal, RamPercent,
+                RamAccent, used, normal, RamText));
+        }
+
+        for (int i = 0; i < Gpus.Count; i++)
+        {
+            var g = Gpus[i];
+            string label = Gpus.Count > 1 ? $"GPU {i}" : "GPU";
+            if (ShowGpuUsage || ShowGpuTemp)
+                tiles.Add(ShowGpuUsage
+                    ? new("gpu:" + g.Id, label, g.UsageText, normal, g.Usage, GpuAccent, ShowGpuTemp ? g.TempText : "", g.TempBrush, g.Name)
+                    : new("gpu:" + g.Id, label, g.TempText, g.TempBrush, 0, GpuAccent, "", normal, g.Name));
+            if (ShowVram)
+                tiles.Add(new("vram:" + g.Id, Gpus.Count > 1 ? $"VRAM {i}" : "VRAM", Format.Percent(g.VramPercent), normal,
+                    g.VramPercent, VramAccent, "", normal, $"{g.Name}\n{g.VramText}"));
+        }
+
+        foreach (var d in Disks)
+        {
+            if (!ShowDiskUsage && !ShowDiskTemp) continue;
+            // 칸이 좁으므로 "DISK 0 (SSD)"에서 종류는 툴팁으로 옮긴다.
+            int paren = d.Title.IndexOf(" (", StringComparison.Ordinal);
+            string label = paren > 0 ? d.Title[..paren] : d.Title;
+            string tip = ShowDiskIo ? $"{d.Title} · {d.Model}\n{d.IoText}" : $"{d.Title} · {d.Model}";
+            tiles.Add(ShowDiskUsage
+                ? new("disk:" + d.Id, label, d.UsageText, normal, d.Usage, DiskAccent, ShowDiskTemp ? d.TempText : "", d.TempBrush, tip)
+                : new("disk:" + d.Id, label, d.TempText, d.TempBrush, 0, DiskAccent, "", normal, tip));
+        }
+
+        // 설정의 그룹 순서를 따른다(VRAM은 GPU 그룹). OrderBy는 안정 정렬이라 그룹 안의 순서는 유지된다.
+        var order = AppSettings.NormalizeGroupOrder(_settings.GroupOrder);
+        tiles = tiles.OrderBy(t => order.IndexOf(t.Id.Split(':')[0] switch { "vram" => "gpu", var k => k })).ToList();
+
+        // 순서가 바뀌었으면 다시 만들고, 같으면 값만 갱신해 깜빡임을 피한다.
+        if (!CompactTiles.Select(t => t.Id).SequenceEqual(tiles.Select(t => t.Id)))
+        {
+            CompactTiles.Clear();
+            foreach (var t in tiles) CompactTiles.Add(new CompactTileViewModel(t.Id));
+        }
+        for (int i = 0; i < tiles.Count; i++)
+        {
+            var t = tiles[i];
+            CompactTiles[i].Update(t.Label, t.ValueText, t.ValueBrush, t.Percent, t.Accent, t.SubText, t.SubBrush, t.ToolTip);
+        }
     }
 
     /// <summary>장치가 추가/제거되면 목록을 맞추고, 있는 항목은 값만 갱신한다.</summary>

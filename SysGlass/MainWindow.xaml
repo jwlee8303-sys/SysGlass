@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:SysGlass.ViewModels"
+        xmlns:views="clr-namespace:SysGlass.Views"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
         Title="SysGlass"
@@ -62,6 +63,10 @@
             </Setter>
         </Style>
 
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#9DA0A6"/>
+            <Setter Property="FontSize" Value="{DynamicResource FsLabel}"/>
+        </Style>
         <!-- 구역 아래 여백. 컴팩트 보기에서는 간격을 줄인다 -->
         <Style x:Key="Section" TargetType="FrameworkElement">
             <Setter Property="Margin" Value="0,0,0,10"/>
@@ -71,19 +76,40 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="CpuValue" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="{DynamicResource FsLarge}"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding CompactMode}" Value="True">
-                    <Setter Property="FontSize" Value="{DynamicResource FsBase}"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
+        <!-- 컴팩트 보기: 워치 위젯형 원형 링 칸 -->
+        <DataTemplate x:Key="RingTile">
+            <StackPanel Margin="2,0,2,8" ToolTip="{Binding ToolTip}" Background="Transparent">
+                <Grid Width="56" Height="56" HorizontalAlignment="Center">
+                    <views:UsageGauge Kind="Ring" Thickness="5" Value="{Binding Percent}" Fill="{Binding Accent}"/>
+                    <TextBlock Text="{Binding ValueText}" Foreground="{Binding ValueBrush}" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+                <TextBlock Text="{Binding Label}" Style="{StaticResource Label}" HorizontalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                <TextBlock Text="{Binding SubText}" Foreground="{Binding SubBrush}" FontSize="{DynamicResource FsLabel}"
+                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding HasSub, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </DataTemplate>
+        <!-- 컴팩트 보기: 배터리 위젯형 캡슐 칸 -->
+        <DataTemplate x:Key="CapsuleTile">
+            <StackPanel Margin="3,0,3,8" ToolTip="{Binding ToolTip}" Background="Transparent">
+                <Grid Height="26">
+                    <views:UsageGauge Kind="Capsule" Value="{Binding Percent}" Fill="{Binding Accent}"/>
+                    <DockPanel Margin="10,0">
+                        <TextBlock Text="{Binding ValueText}" Foreground="{Binding ValueBrush}" FontWeight="SemiBold"
+                                   DockPanel.Dock="Right" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                </Grid>
+                <TextBlock Text="{Binding SubText}" Foreground="{Binding SubBrush}" FontSize="{DynamicResource FsLabel}"
+                           Margin="10,2,0,0" TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding HasSub, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </DataTemplate>
+        <ItemsPanelTemplate x:Key="ThreeColumns"><UniformGrid Columns="3"/></ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="TwoColumns"><UniformGrid Columns="2"/></ItemsPanelTemplate>
 
-        <Style x:Key="Label" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#9DA0A6"/>
-            <Setter Property="FontSize" Value="{DynamicResource FsLabel}"/>
-        </Style>
         <DrawingImage x:Key="TaskManagerFallbackIcon">
             <DrawingImage.Drawing>
                 <DrawingGroup>
@@ -146,22 +172,41 @@
             </Grid>
 
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <!-- 각 구역은 아래쪽 여백만 가지므로 숨겨진 구역은 빈 공간을 남기지 않는다 -->
-                <StackPanel>
+                <!-- 각 구역은 아래쪽 여백만 가지므로 숨겨진 구역은 빈 공간을 남기지 않는다.
+                     Group* 블록은 설정의 그룹 순서에 따라 코드에서 재배치한다(MainWindow.ApplyGroupOrder). -->
+                <StackPanel x:Name="GroupHost">
                     <!-- 표시할 항목이 없을 때 안내 -->
                     <TextBlock Text="표시할 항목이 없습니다.&#x0A;⚙ 설정에서 항목을 선택하세요." Style="{StaticResource Label}"
                                TextWrapping="Wrap" Margin="0,0,0,8"
                                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}"/>
 
-                    <!-- CPU -->
+                    <!-- 컴팩트 보기: 위젯형 칸 -->
+                    <ItemsControl x:Name="CompactTilesPanel" ItemsSource="{Binding CompactTiles}" Margin="-2,0,-2,2" Focusable="False"
+                                  Visibility="{Binding CompactMode, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="ItemTemplate" Value="{StaticResource RingTile}"/>
+                                <Setter Property="ItemsPanel" Value="{StaticResource ThreeColumns}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CompactStyle}" Value="1">
+                                        <Setter Property="ItemTemplate" Value="{StaticResource CapsuleTile}"/>
+                                        <Setter Property="ItemsPanel" Value="{StaticResource TwoColumns}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
+                    </ItemsControl>
+
+                    <!-- CPU (일반 보기) -->
+                    <StackPanel x:Name="GroupCpu" Visibility="{Binding ShowNormalView, Converter={StaticResource BoolToVis}}">
                     <StackPanel Style="{StaticResource Section}" Visibility="{Binding ShowCpuBlock, Converter={StaticResource BoolToVis}}">
                         <DockPanel>
                             <TextBlock Text="CPU" Style="{StaticResource Label}" VerticalAlignment="Bottom"/>
-                            <TextBlock Text="{Binding CpuText}" Style="{StaticResource CpuValue}" FontWeight="SemiBold" HorizontalAlignment="Right"
+                            <TextBlock Text="{Binding CpuText}" FontSize="{DynamicResource FsLarge}" FontWeight="SemiBold" HorizontalAlignment="Right"
                                        Visibility="{Binding ShowCpuUsage, Converter={StaticResource BoolToVis}}"/>
                         </DockPanel>
                         <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding CpuPercent, Mode=OneWay}" Margin="0,4,0,0"
-                                     Visibility="{Binding ShowCpuBar, Converter={StaticResource BoolToVis}}"/>
+                                     Visibility="{Binding ShowCpuUsage, Converter={StaticResource BoolToVis}}"/>
                         <DockPanel Margin="0,4,0,0" Visibility="{Binding ShowCpuSubRow, Converter={StaticResource BoolToVis}}"
                                    ToolTip="{Binding CpuName}">
                             <TextBlock Text="{Binding CpuTempText}" Foreground="{Binding CpuTempBrush}" ToolTip="{Binding SensorNotice}"
@@ -173,18 +218,22 @@
                         </DockPanel>
                     </StackPanel>
 
-                    <!-- RAM -->
+                    </StackPanel>
+
+                    <!-- RAM (일반 보기) -->
+                    <StackPanel x:Name="GroupRam" Visibility="{Binding ShowNormalView, Converter={StaticResource BoolToVis}}">
                     <StackPanel Style="{StaticResource Section}" Visibility="{Binding ShowRamUsage, Converter={StaticResource BoolToVis}}">
                         <DockPanel>
                             <TextBlock Text="RAM" Style="{StaticResource Label}" VerticalAlignment="Bottom"/>
                             <TextBlock Text="{Binding RamText}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
                         </DockPanel>
-                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding RamPercent, Mode=OneWay}" Foreground="#9CDB7F" Margin="0,4,0,0"
-                                     Visibility="{Binding ShowRamBar, Converter={StaticResource BoolToVis}}"/>
+                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding RamPercent, Mode=OneWay}" Foreground="#9CDB7F" Margin="0,4,0,0"/>
+                    </StackPanel>
+
                     </StackPanel>
 
                     <!-- 커널 메모리: 측정하지 못한 값은 N/A·미측정으로 표시 -->
-                    <StackPanel Style="{StaticResource Section}" DataContext="{Binding Memory}"
+                    <StackPanel x:Name="GroupMemory" Style="{StaticResource Section}" DataContext="{Binding Memory}"
                                 Visibility="{Binding DataContext.ShowKernelMemory, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                         <DockPanel ToolTip="{Binding PagedPoolTip}"
                                    Visibility="{Binding DataContext.ShowPagedPool, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
@@ -214,7 +263,8 @@
                         </DockPanel>
                     </StackPanel>
 
-                    <!-- GPU: 선택된 GPU를 목록으로 표시 -->
+                    <!-- GPU (일반 보기): 선택된 GPU를 목록으로 표시 -->
+                    <StackPanel x:Name="GroupGpu" Visibility="{Binding ShowNormalView, Converter={StaticResource BoolToVis}}">
                     <ItemsControl ItemsSource="{Binding Gpus}"
                                   Visibility="{Binding ShowGpuSection, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
@@ -234,21 +284,23 @@
                                         </StackPanel>
                                     </DockPanel>
                                     <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding Usage, Mode=OneWay}" Foreground="#C79BFF" Margin="0,4,0,0"
-                                                 Visibility="{Binding DataContext.ShowGpuBar, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
+                                                 Visibility="{Binding DataContext.ShowGpuUsage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                     <StackPanel Visibility="{Binding DataContext.ShowVram, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                                         <DockPanel Margin="0,4,0,0">
                                             <TextBlock Text="VRAM" Style="{StaticResource Label}"/>
                                             <TextBlock Text="{Binding VramText}" HorizontalAlignment="Right"/>
                                         </DockPanel>
-                                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding VramPercent, Mode=OneWay}" Foreground="#E6A3FF" Margin="0,3,0,0"
-                                                 Visibility="{Binding DataContext.ShowVramBar, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
+                                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding VramPercent, Mode=OneWay}" Foreground="#E6A3FF" Margin="0,3,0,0"/>
                                     </StackPanel>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- 물리 디스크: 선택된 디스크만 -->
+                    </StackPanel>
+
+                    <!-- 물리 디스크 (일반 보기): 선택된 디스크만 -->
+                    <StackPanel x:Name="GroupDisk" Visibility="{Binding ShowNormalView, Converter={StaticResource BoolToVis}}">
                     <ItemsControl ItemsSource="{Binding Disks}"
                                   Visibility="{Binding ShowDiskSection, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
@@ -266,17 +318,17 @@
                                         </StackPanel>
                                     </DockPanel>
                                     <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding Usage, Mode=OneWay}" Foreground="#FFB86B" Margin="0,4,0,0"
-                                                 Visibility="{Binding DataContext.ShowDiskBar, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
+                                                 Visibility="{Binding DataContext.ShowDiskUsage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                     <TextBlock Text="{Binding IoText}" Style="{StaticResource Label}" Margin="0,3,0,0"
                                                Visibility="{Binding DataContext.ShowDiskIo, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-
+                    </StackPanel>
 
                     <!-- 네트워크 -->
-                    <DockPanel Margin="0,0,0,8" Visibility="{Binding ShowNetwork, Converter={StaticResource BoolToVis}}">
+                    <DockPanel x:Name="GroupNet" Margin="0,0,0,8" Visibility="{Binding ShowNetwork, Converter={StaticResource BoolToVis}}">
                         <TextBlock Text="NET" Style="{StaticResource Label}"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <TextBlock Text="↓ " Foreground="#9DA0A6" Visibility="{Binding ShowNetDown, Converter={StaticResource BoolToVis}}"/>

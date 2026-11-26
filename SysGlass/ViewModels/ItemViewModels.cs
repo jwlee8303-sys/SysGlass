@@ -84,3 +84,40 @@ public sealed class DiskItemViewModel : ViewModelBase
         IoText = string.Join("  ", parts);
     }
 }
+
+/// <summary>컴팩트 보기의 위젯 한 칸(CPU, RAM, GPU, VRAM, 디스크). 같은 Id면 값만 갱신한다.</summary>
+public sealed class CompactTileViewModel : ViewModelBase
+{
+    public CompactTileViewModel(string id) { Id = id; }
+
+    public string Id { get; }
+    private string _label = "", _valueText = Format.NA, _subText = "", _toolTip = "";
+    private double _percent;
+    private Brush _accent = TempBrushes.Normal, _valueBrush = TempBrushes.Normal, _subBrush = TempBrushes.Normal;
+
+    public string Label { get => _label; private set => Set(ref _label, value); }
+    /// <summary>게이지 가운데(링) 또는 오른쪽(캡슐)에 표시하는 주 값.</summary>
+    public string ValueText { get => _valueText; private set => Set(ref _valueText, value); }
+    public Brush ValueBrush { get => _valueBrush; private set => Set(ref _valueBrush, value); }
+    /// <summary>게이지 채움 비율(0~100). 사용률을 표시하지 않는 칸은 0.</summary>
+    public double Percent { get => _percent; private set => Set(ref _percent, value); }
+    public Brush Accent { get => _accent; private set => Set(ref _accent, value); }
+    /// <summary>게이지 아래 보조 값(온도, 사용량 등). 비어 있으면 숨긴다.</summary>
+    public string SubText { get => _subText; private set { if (Set(ref _subText, value)) Raise(nameof(HasSub)); } }
+    public Brush SubBrush { get => _subBrush; private set => Set(ref _subBrush, value); }
+    public bool HasSub => _subText.Length > 0;
+    public string ToolTip { get => _toolTip; private set => Set(ref _toolTip, value); }
+
+    public void Update(string label, string valueText, Brush valueBrush, double percent, Brush accent,
+        string subText, Brush subBrush, string toolTip)
+    {
+        Label = label;
+        ValueText = valueText;
+        ValueBrush = valueBrush;
+        Percent = percent;
+        Accent = accent;
+        SubText = subText;
+        SubBrush = subBrush;
+        ToolTip = toolTip;
+    }
+}

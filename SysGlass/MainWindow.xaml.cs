@@ -46,6 +46,7 @@ namespace SysGlass
 
             InitializeComponent();
             ApplyFontResources();
+            ApplyGroupOrder();
 
             Topmost = _settings.AlwaysOnTop;
             Width = _settings.WindowWidth;
@@ -132,6 +133,7 @@ namespace SysGlass
         private void OnSettingChanged(string name)
         {
             if (name is nameof(AppSettings.FontSizeLevel) or "Reset") ApplyFontResources();
+            if (name is nameof(AppSettings.GroupOrder) or "Reset") ApplyGroupOrder();
             if (name is nameof(AppSettings.WindowWidth) or "Reset")
             {
                 Width = Math.Clamp(_settings.WindowWidth, AppSettings.MinWidth, AppSettings.MaxWidth);
@@ -144,6 +146,30 @@ namespace SysGlass
         {
             _saveTimer.Stop();
             _saveTimer.Start();
+        }
+
+        /// <summary>
+        /// 설정의 그룹 순서대로 오버레이 블록을 재배치한다. 컴팩트 보기의 게이지 묶음은
+        /// 게이지 그룹(CPU·RAM·GPU·디스크) 중 가장 앞 그룹의 자리에 놓는다.
+        /// </summary>
+        private void ApplyGroupOrder()
+        {
+            var blocks = new Dictionary<string, UIElement>
+            {
+                ["cpu"] = GroupCpu, ["ram"] = GroupRam, ["memory"] = GroupMemory,
+                ["gpu"] = GroupGpu, ["disk"] = GroupDisk, ["net"] = GroupNet,
+            };
+            var ordered = new List<UIElement>();
+            foreach (var key in AppSettings.NormalizeGroupOrder(_settings.GroupOrder))
+            {
+                if (key is "cpu" or "ram" or "gpu" or "disk" && !ordered.Contains(CompactTilesPanel))
+                    ordered.Add(CompactTilesPanel);
+                ordered.Add(blocks[key]);
+            }
+
+            // 안내 문구 등 순서 대상이 아닌 요소는 앞쪽에 그대로 두고, 그 뒤에 순서대로 다시 넣는다.
+            foreach (var e in ordered) GroupHost.Children.Remove(e);
+            foreach (var e in ordered) GroupHost.Children.Add(e);
         }
 
         /// <summary>글자 크기 단계에 맞게 크기 리소스를 갱신한다. 레이아웃은 자동으로 다시 계산된다.</summary>

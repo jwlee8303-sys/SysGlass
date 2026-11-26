@@ -27,6 +27,31 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         _s = main.Settings;
         _controller = controller;
         _controller.ControllerStateChanged += OnControllerChanged;
+        LoadGroupOrder();
+    }
+
+    // ── 표시 그룹 순서 (버튼·드래그로 변경) ──
+    private static readonly Dictionary<string, string> GroupTitles = new()
+    {
+        ["cpu"] = "CPU", ["ram"] = "RAM", ["memory"] = "메모리 감시", ["gpu"] = "GPU · VRAM", ["disk"] = "디스크", ["net"] = "네트워크",
+    };
+
+    public System.Collections.ObjectModel.ObservableCollection<GroupOrderItem> GroupOrder { get; } = [];
+
+    private void LoadGroupOrder()
+    {
+        GroupOrder.Clear();
+        foreach (var key in AppSettings.NormalizeGroupOrder(_s.GroupOrder))
+            GroupOrder.Add(new GroupOrderItem(key, GroupTitles[key]));
+    }
+
+    /// <summary>그룹을 from 위치에서 to 위치로 옮긴다. 범위를 벗어나거나 같은 위치면 무시한다.</summary>
+    public void MoveGroup(int from, int to)
+    {
+        if (from < 0 || from >= GroupOrder.Count || to < 0 || to >= GroupOrder.Count || from == to) return;
+        GroupOrder.Move(from, to);
+        _s.GroupOrder = GroupOrder.Select(g => g.Key).ToList();
+        _main.NotifySettingsChanged(nameof(AppSettings.GroupOrder));
     }
 
     public DeviceSelectionViewModel Gpus => _main.GpuSelection;
@@ -128,6 +153,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     }
 
     public bool CompactMode { get => _s.CompactMode; set => Put(_s.CompactMode, value, v => _s.CompactMode = v); }
+    public int CompactStyle { get => _s.CompactStyle; set => Put(_s.CompactStyle, Math.Clamp(value, 0, 1), v => _s.CompactStyle = v); }
     public int FontSizeLevel { get => _s.FontSizeLevel; set => Put(_s.FontSizeLevel, Math.Clamp(value, 0, 2), v => _s.FontSizeLevel = v); }
 
     public double WindowWidth
@@ -181,6 +207,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     public void RefreshAll()
     {
         Raise(string.Empty);
+        LoadGroupOrder();
         Gpus.RefreshFromSettings();
         Disks.RefreshFromSettings();
     }
@@ -199,3 +226,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         _controller.ControllerStateChanged -= OnControllerChanged;
     }
 }
+
+/// <summary>설정 창의 그룹 순서 목록 한 줄.</summary>
+public sealed record GroupOrderItem(string Key, string Title);

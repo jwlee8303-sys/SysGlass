@@ -19,14 +19,32 @@ public sealed class AppSettings
     /// <summary>글자 크기 단계: 0=작게, 1=보통, 2=크게</summary>
     public int FontSizeLevel { get; set; } = 1;
     public double WindowWidth { get; set; } = 280;
-    /// <summary>컴팩트 보기: 사용률 막대를 숨기고 구역 간격을 줄인다.</summary>
+    /// <summary>컴팩트 보기: 항목을 위젯형 칸으로 작게 표시한다.</summary>
     public bool CompactMode { get; set; }
+    /// <summary>컴팩트 보기 모양. 0 = 원형 링, 1 = 배터리 캡슐</summary>
+    public int CompactStyle { get; set; }
 
     // ── 동작 ──
     public bool AlwaysOnTop { get; set; } = true;
     /// <summary>마우스 클릭 통과 모드. 트레이가 준비된 뒤에만 시작 시 적용된다.</summary>
     public bool IsClickThroughEnabled { get; set; }
     public int RefreshIntervalMs { get; set; } = 1000;
+
+    // ── 표시 그룹 순서 ──
+    /// <summary>오버레이 그룹 키의 기본 순서: CPU, RAM, 메모리 감시, GPU, 디스크, 네트워크.</summary>
+    public static readonly string[] DefaultGroupOrder = ["cpu", "ram", "memory", "gpu", "disk", "net"];
+    public List<string> GroupOrder { get; set; } = [.. DefaultGroupOrder];
+
+    /// <summary>알 수 없는 키·중복을 버리고, 빠진 그룹은 기본 순서대로 뒤에 붙인다.</summary>
+    public static List<string> NormalizeGroupOrder(IEnumerable<string>? order)
+    {
+        var result = new List<string>();
+        foreach (var key in order ?? [])
+            if (key is not null && DefaultGroupOrder.Contains(key) && !result.Contains(key)) result.Add(key);
+        foreach (var key in DefaultGroupOrder)
+            if (!result.Contains(key)) result.Add(key);
+        return result;
+    }
 
     // ── 표시 항목 ──
     public bool ShowCpuUsage { get; set; } = true;
@@ -117,6 +135,8 @@ public sealed class AppSettings
 
         BackgroundOpacity = Finite(BackgroundOpacity, 0.8, 0.2, 1.0);
         FontSizeLevel = Math.Clamp(FontSizeLevel, 0, 2);
+        CompactStyle = Math.Clamp(CompactStyle, 0, 1);
+        GroupOrder = NormalizeGroupOrder(GroupOrder);
         WindowWidth = Finite(WindowWidth, 280, MinWidth, MaxWidth);
         if (RefreshIntervalMs is not (500 or 1000 or 2000 or 5000)) RefreshIntervalMs = 1000;
 
