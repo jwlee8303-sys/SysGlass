@@ -27,6 +27,8 @@ namespace SysGlass
         private bool _clickThrough;
         private SettingsWindow? _settingsWindow;
         private ProcessWindow? _processWindow;
+        private MemoryWindow? _memoryWindow;
+        private PrecisionTraceWindow? _traceWindow;
         private bool _systemToolIconsLoaded;
 
         public event Action? ControllerStateChanged;
@@ -187,7 +189,11 @@ namespace SysGlass
             _tray.GetTopmost = () => Topmost;
             _tray.GetClickThrough = () => _clickThrough;
             _tray.Initialize(ToggleVisible, () => SetTopmost(!Topmost), () => SetClickThrough(!_clickThrough, true),
-                ShowSettings, () => Close());
+                ShowSettings, () => Close(),
+                [("메모리 상세 분석...", ShowMemoryAnalysis), ("진단 기록 열기", OpenMemoryLogs), ("정밀 추적 시작...", ShowPrecisionTrace),
+                 ("메모리 감시 설정...", ShowMemorySettings)]);
+            _vm.MemoryService.AlertRaised += OnMemoryAlert;
+            _vm.Trace.Finished += OnTraceFinished;
             _hotKey.Register(Hwnd, () => SetClickThrough(!_clickThrough, true));
 
             if (_settings.IsClickThroughEnabled)
@@ -209,6 +215,8 @@ namespace SysGlass
             _settings.AlwaysOnTop = on;
             if (_settingsWindow != null) _settingsWindow.Topmost = on;
             if (_processWindow != null) _processWindow.Topmost = on;
+            if (_memoryWindow != null) _memoryWindow.Topmost = on;
+            if (_traceWindow != null) _traceWindow.Topmost = on;
             RequestSave();
             ControllerStateChanged?.Invoke();
         }
@@ -280,6 +288,33 @@ namespace SysGlass
 
         private void OnOpenSettings(object sender, RoutedEventArgs e) => ShowSettings();
 
+        /// <summary>진단 기록 폴더를 탐색기로 연다(없으면 만든다).</summary>
+        public void OpenMemoryLogs()
+        {
+            try
+            {
+                string dir = _vm.MemoryService.LogDirectory;
+                Directory.CreateDirectory(dir);
+                Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { dir }, UseShellExecute = true })?.Dispose();
+            }
+            catch (Exception ex) { Logger.Error("진단 기록 폴더 열기 실패", ex); }
+        }
+
+        private void ShowMemorySettings()
+        {
+            ShowSettings();
+            _settingsWindow?.ShowMemorySection();
+        }
+
+        /// <summary>메모리 이상 알림(백그라운드 스레드에서 호출됨). 설정에서 알림을 끈 경우 표시하지 않는다.</summary>
+        private void OnMemoryAlert(IReadOnlyList<Models.MemoryAlert> alerts) =>
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (!_settings.MemAlertsEnabled || alerts.Count == 0) return;
+                var (title, body) = Models.MemoryAlertText.Compose(alerts, TimeSpan.FromMinutes(_settings.MemAlertSustainMin));
+                _tray.ShowNotification(title, body, warning: true);
+            });
+
         // ───────── 프로세스 현황 창 (중복 생성 방지) ─────────
 
         private void ShowProcesses()
@@ -306,6 +341,76 @@ namespace SysGlass
         }
 
         private void OnOpenProcesses(object sender, RoutedEventArgs e) => ShowProcesses();
+
+        // ───────── 정밀 추적 창 (중복 생성 방지) ─────────
+
+        private void ShowPrecisionTrace()
+        {
+            try
+            {
+                if (_traceWindow != null)
+                {
+                    if (_traceWindow.WindowState == WindowState.Minimized) _traceWindow.WindowState = WindowState.Normal;
+                    _traceWindow.Activate();
+                    return;
+                }
+                var win = new PrecisionTraceWindow(_vm.Trace, SuggestTraceTags(_vm.MemoryService.Current.PoolTags)) { Topmost = Topmost };
+                _traceWindow = win;
+                win.Closed += (_, _) => _traceWindow = null;
+                win.Show();
+                win.Activate();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("정밀 추적 창 열기 실패", ex);
+                _traceWindow = null;
+            }
+        }
+
+        /// <summary>기본 추적 대상: 1시간(없으면 10분) 증가량이 큰 태그, 증가 이력이 없으면 사용량이 큰 태그 4개.</summary>
+        internal static string SuggestTraceTags(Models.PoolTagReport? r)
+        {
+            if (r is not { Available: true }) return "";
+            var growth = r.Growth1h ?? r.Growth10m;
+            var keys = growth is { Count: > 0 }
+                ? growth.Where(g => g.Value > 0).OrderByDescending(g => g.Value).Select(g => g.Key).Take(4).ToHashSet()
+                : [];
+            var tags = r.Tags.Where(t => keys.Contains(t.Key)).OrderByDescending(t => growth![t.Key]).Select(t => t.Tag).ToList();
+            if (tags.Count == 0) tags = r.Tags.OrderByDescending(t => t.PagedUsed + t.NonPagedUsed).Take(4).Select(t => t.Tag).ToList();
+            return string.Join(", ", tags.Where(t => Services.Memory.PrecisionTraceService.ParseTags(t, out _) is null).Select(t => t.TrimEnd()));
+        }
+
+        private void OnTraceFinished(string? path, string? error) =>
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (path is not null) _tray.ShowNotification("정밀 추적 저장됨", $"WPA로 열어 확인하세요: {path}", warning: false);
+                else if (error is not null) _tray.ShowNotification("정밀 추적 실패", error, warning: true);
+            });
+
+        // ───────── 메모리 상세 분석 창 (중복 생성 방지) ─────────
+
+        private void ShowMemoryAnalysis()
+        {
+            try
+            {
+                if (_memoryWindow != null)
+                {
+                    if (_memoryWindow.WindowState == WindowState.Minimized) _memoryWindow.WindowState = WindowState.Normal;
+                    _memoryWindow.Activate();
+                    return;
+                }
+                var win = new MemoryWindow(new MemoryAnalysisViewModel(_vm.MemoryService, _settings), OpenMemoryLogs) { Topmost = Topmost };
+                _memoryWindow = win;
+                win.Closed += (_, _) => _memoryWindow = null;
+                win.Show();
+                win.Activate();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("메모리 상세 분석 창 열기 실패", ex);
+                _memoryWindow = null;
+            }
+        }
 
         // ───────── 위치 / 화면 ─────────
 
@@ -395,6 +500,10 @@ namespace SysGlass
             _settingsService.Save(_settings);
             _settingsWindow?.Close();
             _processWindow?.Close();
+            _memoryWindow?.Close();
+            _traceWindow?.Close();
+            _vm.MemoryService.AlertRaised -= OnMemoryAlert;
+            _vm.Trace.Finished -= OnTraceFinished;
             _hotKey.Dispose();
             _tray.Dispose();
             _vm.Dispose();

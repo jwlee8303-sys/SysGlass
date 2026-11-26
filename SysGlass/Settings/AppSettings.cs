@@ -41,8 +41,10 @@ public sealed class AppSettings
     public bool ShowDiskWrite { get; set; } = true;
     public bool ShowNetDown { get; set; } = true;
     public bool ShowNetUp { get; set; } = true;
-    public bool ShowClaudeUsage { get; set; } = true;
-    public bool ShowCodexUsage { get; set; } = true;
+    public bool ShowPagedPool { get; set; } = true;
+    public bool ShowNonPagedPool { get; set; } = true;
+    public bool ShowPoolGrowth { get; set; } = true;
+    public bool ShowUptime { get; set; }
 
     // 이전 버전 설정 파일 호환용. Normalize()에서 새 필드로 옮기고 비운다(저장되지 않음).
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? ShowDiskIo { get; set; }
@@ -59,6 +61,44 @@ public sealed class AppSettings
     public double GpuTempHigh { get; set; } = 85;
     public double DiskTempWarn { get; set; } = 55;
     public double DiskTempHigh { get; set; } = 70;
+
+    // ── 메모리 감시 (수집 주기는 초 단위) ──
+    public bool MemoryWatchEnabled { get; set; } = true;
+    public int MemKernelIntervalSec { get; set; } = 5;
+    public int MemResidentIntervalSec { get; set; } = 30;
+    public int MemPoolTagIntervalSec { get; set; } = 60;
+    public int MemProcessIntervalSec { get; set; } = 60;
+    public int MemUptimeIntervalSec { get; set; } = 60;
+    public bool ShowMemoryStatus { get; set; } = true;
+    public bool MemAlertsEnabled { get; set; } = true;
+    /// <summary>상태 색상: 0=기본(노랑/빨강), 1=고대비(주황/자홍)</summary>
+    public int MemColorScheme { get; set; }
+
+    // ── 메모리 이상 감지 기준. 가용 RAM은 값이 기준 '이하'일 때 이상 ──
+    public int MemPagedWarnMb { get; set; } = 2048;
+    public int MemPagedHighMb { get; set; } = 4096;
+    public int MemNonPagedWarnMb { get; set; } = 2048;
+    public int MemNonPagedHighMb { get; set; } = 4096;
+    public int MemPoolTagWarnMb { get; set; } = 512;
+    public int MemPoolTagHighMb { get; set; } = 1024;
+    public int MemGrowthWarnMbPerHour { get; set; } = 200;
+    public int MemGrowthHighMbPerHour { get; set; } = 500;
+    public int MemCommitWarnPercent { get; set; } = 80;
+    public int MemCommitHighPercent { get; set; } = 90;
+    public int MemAvailWarnPercent { get; set; } = 15;
+    public int MemAvailHighPercent { get; set; } = 5;
+    public int MemAlertSustainMin { get; set; } = 5;
+    public int MemAlertRepeatMin { get; set; } = 30;
+
+    // ── 메모리 감시 기록 ──
+    public bool MemLogEnabled { get; set; } = true;
+    public int MemRetentionDays { get; set; } = 30;
+    public int MemLogMaxMb { get; set; } = 200;
+
+    /// <summary>감지 기준 범위(최소, 최대). 설정 화면과 보정에서 함께 쓴다.</summary>
+    public static readonly (int Min, int Max) PoolMbRange = (64, 262144), TagMbRange = (16, 65536),
+        GrowthRange = (10, 65536), CommitRange = (10, 100), AvailRange = (1, 90),
+        SustainRange = (1, 120), RepeatRange = (5, 1440);
 
     // ── 창 위치 (null이면 기본 위치) ──
     public double? WindowLeft { get; set; }
@@ -82,6 +122,23 @@ public sealed class AppSettings
         (GpuTempWarn, GpuTempHigh) = Pair(GpuTempWarn, GpuTempHigh, 75, 85);
         (DiskTempWarn, DiskTempHigh) = Pair(DiskTempWarn, DiskTempHigh, 55, 70);
 
+        MemKernelIntervalSec = Math.Clamp(MemKernelIntervalSec, 1, 60);
+        MemResidentIntervalSec = Math.Clamp(MemResidentIntervalSec, 5, 600);
+        MemPoolTagIntervalSec = Math.Clamp(MemPoolTagIntervalSec, 15, 3600);
+        MemProcessIntervalSec = Math.Clamp(MemProcessIntervalSec, 15, 3600);
+        MemUptimeIntervalSec = Math.Clamp(MemUptimeIntervalSec, 5, 3600);
+        MemColorScheme = Math.Clamp(MemColorScheme, 0, 1);
+        (MemPagedWarnMb, MemPagedHighMb) = IntPair(MemPagedWarnMb, MemPagedHighMb, 2048, 4096, PoolMbRange, false);
+        (MemNonPagedWarnMb, MemNonPagedHighMb) = IntPair(MemNonPagedWarnMb, MemNonPagedHighMb, 2048, 4096, PoolMbRange, false);
+        (MemPoolTagWarnMb, MemPoolTagHighMb) = IntPair(MemPoolTagWarnMb, MemPoolTagHighMb, 512, 1024, TagMbRange, false);
+        (MemGrowthWarnMbPerHour, MemGrowthHighMbPerHour) = IntPair(MemGrowthWarnMbPerHour, MemGrowthHighMbPerHour, 200, 500, GrowthRange, false);
+        (MemCommitWarnPercent, MemCommitHighPercent) = IntPair(MemCommitWarnPercent, MemCommitHighPercent, 80, 90, CommitRange, false);
+        (MemAvailWarnPercent, MemAvailHighPercent) = IntPair(MemAvailWarnPercent, MemAvailHighPercent, 15, 5, AvailRange, true);
+        MemAlertSustainMin = Math.Clamp(MemAlertSustainMin, SustainRange.Min, SustainRange.Max);
+        MemAlertRepeatMin = Math.Clamp(MemAlertRepeatMin, RepeatRange.Min, RepeatRange.Max);
+        MemRetentionDays = Math.Clamp(MemRetentionDays, 1, 365);
+        MemLogMaxMb = Math.Clamp(MemLogMaxMb, 10, 4096);
+
         SelectedGpus = Clean(SelectedGpus);
         SelectedDisks = Clean(SelectedDisks);
 
@@ -99,6 +156,18 @@ public sealed class AppSettings
         high = Finite(high, defHigh, MinTemp + 1, MaxTemp);
         if (warn >= high) (warn, high) = (defWarn, defHigh);
         return (warn, high);
+    }
+
+    /// <summary>
+    /// 주의·위험 기준을 범위 안으로 보정한다. 보통은 주의 &lt; 위험이고, lowerIsWorse(가용 RAM 등)면 주의 &gt; 위험이다.
+    /// 순서가 맞지 않으면 기본값으로 되돌린다.
+    /// </summary>
+    internal static (int warn, int high) IntPair(int warn, int high, int defWarn, int defHigh, (int Min, int Max) range, bool lowerIsWorse)
+    {
+        warn = Math.Clamp(warn, range.Min, range.Max);
+        high = Math.Clamp(high, range.Min, range.Max);
+        bool ordered = lowerIsWorse ? warn > high : warn < high;
+        return ordered ? (warn, high) : (defWarn, defHigh);
     }
 
     private static List<DeviceKey>? Clean(List<DeviceKey>? list) =>

@@ -1,6 +1,5 @@
 ﻿using System.Windows;
 using System.Windows.Interop;
-using System.Diagnostics;
 using SysGlass.Utilities;
 using SysGlass.ViewModels;
 
@@ -16,28 +15,18 @@ public partial class SettingsWindow : Window
         _vm = vm;
         DataContext = vm;
         InitializeComponent();
-        Loaded += async (_, _) => await _vm.CheckConnectionsAsync();
         // 어두운 제목 표시줄
         SourceInitialized += (_, _) => WindowStyleHelper.UseDarkTitleBar(new WindowInteropHelper(this).Handle);
         Closed += (_, _) => _vm.Dispose();
     }
 
+    /// <summary>메모리 감시 설정으로 스크롤한다. 창을 막 연 경우를 위해 레이아웃이 끝난 뒤 실행한다.</summary>
+    public void ShowMemorySection() =>
+        Dispatcher.BeginInvoke(() => MemoryCard.BringIntoView(), System.Windows.Threading.DispatcherPriority.Loaded);
+
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
-    private async void OnConnectClaude(object sender, RoutedEventArgs e) => await _vm.ConnectClaudeAsync();
-    private async void OnDisconnectClaude(object sender, RoutedEventArgs e) => await _vm.ConnectClaudeAsync(disconnect: true);
-    private async void OnConnectCodex(object sender, RoutedEventArgs e) => await _vm.ConnectCodexAsync();
-    private void OnDisconnectCodex(object sender, RoutedEventArgs e) => _vm.DisconnectCodex();
-    private void OnCancelConnection(object sender, RoutedEventArgs e) => _vm.CancelConnection();
-
-    private void OnClaudeInstall(object sender, RoutedEventArgs e) => OpenInstallPage("https://code.claude.com/docs/en/setup");
-    private void OnCodexInstall(object sender, RoutedEventArgs e) => OpenInstallPage("https://developers.openai.com/codex/cli/");
-
-    private void OpenInstallPage(string url)
-    {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch { MessageBox.Show(this, "브라우저를 열 수 없습니다. 기본 브라우저 설정을 확인하세요.", "설치 안내"); }
-    }
+    private void OnOpenMemoryLogs(object sender, RoutedEventArgs e) => (Owner as MainWindow ?? Application.Current.MainWindow as MainWindow)?.OpenMemoryLogs();
 
     private void OnReset(object sender, RoutedEventArgs e)
     {

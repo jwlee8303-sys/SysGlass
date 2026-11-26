@@ -71,6 +71,16 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="NumBox" TargetType="TextBox">
+            <Setter Property="Width" Value="72"/>
+            <Setter Property="Background" Value="#1C1C1F"/>
+            <Setter Property="Foreground" Value="#F2F2F2"/>
+            <Setter Property="BorderBrush" Value="#4A4D55"/>
+            <Setter Property="CaretBrush" Value="#F2F2F2"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
 </Window.Resources>
 
     <DockPanel>
@@ -96,6 +106,11 @@
                         <CheckBox Content="CPU 클럭" IsChecked="{Binding ShowCpuClock}"/>
                         <TextBlock Text="메모리" Style="{StaticResource SubTitle}"/>
                         <CheckBox Content="RAM 사용량 및 사용률" IsChecked="{Binding ShowRamUsage}"/>
+                        <CheckBox Content="Paged Pool (페이징 풀 및 상주량)" IsChecked="{Binding ShowPagedPool}"/>
+                        <CheckBox Content="NonPaged Pool (비페이징 풀)" IsChecked="{Binding ShowNonPagedPool}"/>
+                        <CheckBox Content="Pool Growth (최근 10분·1시간 풀 증가량)" IsChecked="{Binding ShowPoolGrowth}"/>
+                        <CheckBox Content="Uptime (시스템 가동 시간)" IsChecked="{Binding ShowUptime}"/>
+                        <CheckBox Content="Memory Status (메모리 감시 상태)" IsChecked="{Binding ShowMemoryStatus}"/>
                         <TextBlock Text="GPU" Style="{StaticResource SubTitle}"/>
                         <CheckBox Content="GPU 사용률" IsChecked="{Binding ShowGpuUsage}"/>
                         <CheckBox Content="GPU 온도" IsChecked="{Binding ShowGpuTemp}"/>
@@ -108,38 +123,6 @@
                         <TextBlock Text="네트워크" Style="{StaticResource SubTitle}"/>
                         <CheckBox Content="다운로드 속도" IsChecked="{Binding ShowNetDown}"/>
                         <CheckBox Content="업로드 속도" IsChecked="{Binding ShowNetUp}"/>
-                        <TextBlock Text="AI 사용량" Style="{StaticResource SubTitle}"/>
-                        <CheckBox Content="Claude Code 사용 한도" IsChecked="{Binding ShowClaudeUsage}"/>
-                        <CheckBox Content="Codex 사용 한도" IsChecked="{Binding ShowCodexUsage}"/>
-                        <TextBlock Text="아래 연결 버튼으로 사용량 표시를 준비할 수 있습니다." Style="{StaticResource Hint}" Margin="0,6,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="AI 서비스 연결" Style="{StaticResource SectionTitle}"/>
-                        <TextBlock Text="Claude Code" FontWeight="SemiBold"/>
-                        <WrapPanel Margin="0,8,0,4">
-                            <Button Content="Claude Code 연결" Style="{StaticResource PlainButton}" Click="OnConnectClaude" IsEnabled="{Binding CanConnect}" Margin="0,0,6,6"/>
-                            <Button Content="연결 해제" Style="{StaticResource PlainButton}" Click="OnDisconnectClaude" IsEnabled="{Binding CanConnect}" Margin="0,0,6,6"/>
-                            <Button Content="설치 안내" Style="{StaticResource PlainButton}" Click="OnClaudeInstall" Margin="0,0,0,6"/>
-                        </WrapPanel>
-                        <TextBlock Text="{Binding ClaudeConnectionStatus}" TextWrapping="Wrap"/>
-                        <TextBlock Text="기존 상태줄을 유지하면서 사용량을 연결합니다. 연결 후 Claude Code를 새로 열고 평소처럼 사용하세요."
-                                   Style="{StaticResource Hint}" Margin="0,4,0,0"/>
-                        <TextBlock Text="{Binding ClaudeUsage.Status}" Style="{StaticResource Hint}"/>
-                        <TextBlock Text="Codex" FontWeight="SemiBold" Margin="0,16,0,0"/>
-                        <WrapPanel Margin="0,8,0,4">
-                            <Button Content="Codex 연결" Style="{StaticResource PlainButton}" Click="OnConnectCodex" IsEnabled="{Binding CanConnect}" Margin="0,0,6,6"/>
-                            <Button Content="연결 해제" Style="{StaticResource PlainButton}" Click="OnDisconnectCodex" IsEnabled="{Binding CanConnect}" Margin="0,0,6,6"/>
-                            <Button Content="설치 안내" Style="{StaticResource PlainButton}" Click="OnCodexInstall" Margin="0,0,0,6"/>
-                        </WrapPanel>
-                        <TextBlock Text="{Binding CodexConnectionStatus}" TextWrapping="Wrap"/>
-                        <TextBlock Text="이미 로그인했다면 바로 연결됩니다. 로그인이 필요하면 공식 로그인 화면이 열립니다."
-                                   Style="{StaticResource Hint}" Margin="0,4,0,0"/>
-                        <TextBlock Text="{Binding CodexUsage.Status}" Style="{StaticResource Hint}"/>
-                        <Button Content="로그인 취소" Style="{StaticResource PlainButton}" Click="OnCancelConnection" HorizontalAlignment="Left" Margin="0,10,0,0"
-                                Visibility="{Binding IsLoggingIn, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                 </Border>
 
@@ -274,6 +257,102 @@
                             <Slider Minimum="{Binding TempMin}" Maximum="{Binding TempMax}" TickFrequency="1" IsSnapToTickEnabled="True"
                                     Value="{Binding DiskTempHigh, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                         </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 메모리 감시 -->
+                <Border x:Name="MemoryCard" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="메모리 감시" Style="{StaticResource SectionTitle}"/>
+                        <CheckBox Content="메모리 감시 사용" IsChecked="{Binding MemoryWatchEnabled}"/>
+                        <CheckBox Content="이상 상태를 트레이 알림으로 표시" IsChecked="{Binding MemAlertsEnabled}"/>
+                        <TextBlock Text="절대 사용량과 최근 1시간 증가 추세를 함께 판단합니다. 기준을 넘은 상태가 지속 시간 이상 이어지면 알리고, 같은 알림은 재발송 간격마다, 상태가 악화되면 즉시 다시 알립니다. 알림은 누수 의심 단계이며 원인을 확정하지 않습니다."
+                                   Style="{StaticResource Hint}" Margin="0,4,0,0"/>
+                        <DockPanel Margin="0,10,0,2">
+                            <TextBlock DockPanel.Dock="Right" Text="위험" Width="72" TextAlignment="Center" Style="{StaticResource Hint}"/>
+                            <TextBlock DockPanel.Dock="Right" Text="주의" Width="72" Margin="0,0,6,0" TextAlignment="Center" Style="{StaticResource Hint}"/>
+                            <TextBlock Text="감지 기준" Style="{StaticResource SubTitle}" Margin="0"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemPagedHighMb}"/>
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemPagedWarnMb}" Margin="0,0,6,0"/>
+                            <TextBlock Text="페이징 풀 (MB)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemNonPagedHighMb}"/>
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemNonPagedWarnMb}" Margin="0,0,6,0"/>
+                            <TextBlock Text="비페이징 풀 (MB)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemPoolTagHighMb}"/>
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemPoolTagWarnMb}" Margin="0,0,6,0"/>
+                            <TextBlock Text="개별 Pool Tag (MB)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemGrowthHighMbPerHour}"/>
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemGrowthWarnMbPerHour}" Margin="0,0,6,0"/>
+                            <TextBlock Text="시간당 풀 증가량 (MB/h)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemCommitHighPercent}"/>
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemCommitWarnPercent}" Margin="0,0,6,0"/>
+                            <TextBlock Text="커밋 사용률 (% 이상)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemAvailHighPercent}"/>
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemAvailWarnPercent}" Margin="0,0,6,0"/>
+                            <TextBlock Text="가용 RAM 비율 (% 이하)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Text="입력 후 다른 칸으로 이동하면 적용됩니다. 주의와 위험 기준이 뒤바뀌지 않도록 자동 보정됩니다."
+                                   Style="{StaticResource Hint}" Margin="0,4,0,0"/>
+                        <TextBlock Text="알림 시점" Style="{StaticResource SubTitle}"/>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemAlertSustainMin}"/>
+                            <TextBlock Text="이상 상태 지속 시간 (분)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemAlertRepeatMin}"/>
+                            <TextBlock Text="같은 알림 재발송 간격 (분)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Text="상태 색상" Style="{StaticResource SubTitle}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Content="기본 (노랑/빨강)" GroupName="MemColor" IsChecked="{Binding MemColorScheme, Converter={StaticResource EqualsConv}, ConverterParameter=0}"/>
+                            <RadioButton Content="고대비 (주황/자홍)" GroupName="MemColor" IsChecked="{Binding MemColorScheme, Converter={StaticResource EqualsConv}, ConverterParameter=1}"/>
+                        </StackPanel>
+                        <TextBlock Text="수집 주기 (초)" Style="{StaticResource SubTitle}"/>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemKernelIntervalSec}"/>
+                            <TextBlock Text="커널 메모리 (1~60)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemResidentIntervalSec}"/>
+                            <TextBlock Text="페이징 풀 상주량 (5~600)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemPoolTagIntervalSec}"/>
+                            <TextBlock Text="Pool Tag (15~3600)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemProcessIntervalSec}"/>
+                            <TextBlock Text="프로세스 정보 (15~3600)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemUptimeIntervalSec}"/>
+                            <TextBlock Text="시스템 가동 시간 (5~3600)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Text="기록" Style="{StaticResource SubTitle}"/>
+                        <CheckBox Content="요약 로그와 이상 감지 시 상세 진단 파일 저장" IsChecked="{Binding MemLogEnabled}"/>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemRetentionDays}"/>
+                            <TextBlock Text="보존 기간 (일, 1~365)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBox DockPanel.Dock="Right" Style="{StaticResource NumBox}" Text="{Binding MemLogMaxMb}"/>
+                            <TextBlock Text="기록 최대 용량 (MB, 10~4096)" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Text="기록은 %AppData%\SysGlass\memory에 CSV·JSON으로 저장되며 외부로 전송되지 않습니다. 기간이나 용량을 넘으면 오래된 기록부터 지웁니다. 명령줄·환경 변수·인증 정보는 수집하지 않습니다."
+                                   Style="{StaticResource Hint}" Margin="0,4,0,0"/>
+                        <Button Content="진단 기록 폴더 열기" Style="{StaticResource PlainButton}" Click="OnOpenMemoryLogs" HorizontalAlignment="Left" Margin="0,8,0,0"/>
                     </StackPanel>
                 </Border>
 

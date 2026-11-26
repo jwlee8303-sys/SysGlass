@@ -6,11 +6,24 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../SysGlass/Models/AiUsageSnapshot.cs" Link="AiUsageSnapshot.cs" />
-    <Compile Include="../../SysGlass/Services/CodexUsageReader.cs" Link="CodexUsageReader.cs" />
-    <Compile Include="../../SysGlass/Services/ClaudeConnectionService.cs" Link="ClaudeConnectionService.cs" />
     <Compile Include="../../SysGlass/Utilities/AppPaths.cs" Link="AppPaths.cs" />
-    <Compile Include="../../SysGlass/ViewModels/AiUsageViewModel.cs" Link="AiUsageViewModel.cs" />
     <Compile Include="../../SysGlass/ViewModels/ViewModelBase.cs" Link="ViewModelBase.cs" />
+    <Compile Include="../../SysGlass/Models/MemoryModels.cs" Link="Memory/MemoryModels.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/MemoryHistory.cs" Link="Memory/MemoryHistory.cs" />
+    <Compile Include="../../SysGlass/Utilities/Format.cs" Link="Memory/Format.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/MemoryAnomalyDetector.cs" Link="Memory/MemoryAnomalyDetector.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/MemoryReadings.cs" Link="Memory/MemoryReadings.cs" />
+    <Compile Include="../../SysGlass/Settings/AppSettings.cs" Link="Memory/AppSettings.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/PoolTagCollector.cs" Link="Memory/PoolTagCollector.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/NtSystemInfoBuffer.cs" Link="Memory/NtSystemInfoBuffer.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/PoolTagHistory.cs" Link="Memory/PoolTagHistory.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/ProcessMemoryCollector.cs" Link="Memory/ProcessMemoryCollector.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/DiagnosticWriter.cs" Link="Memory/DiagnosticWriter.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/PoolTagCatalog.cs" Link="Memory/PoolTagCatalog.cs" />
+    <Compile Include="../../SysGlass/Utilities/NativeMethods.cs" Link="Memory/NativeMethods.cs" />
+    <Compile Include="../../SysGlass/Utilities/Logger.cs" Link="Memory/Logger.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/ProcessEventStats.cs" Link="Memory/ProcessEventStats.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/DriverTagSearch.cs" Link="Memory/DriverTagSearch.cs" />
+    <Compile Include="../../SysGlass/Services/Memory/PrecisionTraceService.cs" Link="Memory/PrecisionTraceService.cs" />
   </ItemGroup>
 </Project>

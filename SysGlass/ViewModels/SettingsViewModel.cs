@@ -1,8 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
 using SysGlass.Settings;
-using System.Diagnostics;
-using System.IO;
-using SysGlass.Services;
 
 namespace SysGlass.ViewModels;
 
@@ -22,109 +19,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     private readonly AppSettings _s;
     private readonly MainViewModel _main;
     private readonly IMainWindowController _controller;
-    private readonly ClaudeConnectionService _claudeConnection = new();
-    private CancellationTokenSource? _connectionCts;
-    private bool _connecting, _disposed;
-    private int _connectionGeneration;
-    private string _claudeConnectionStatus = "연결 상태 확인 중";
-    private string _codexConnectionStatus = "연결을 누르면 로그인 상태를 확인합니다.";
-
-    public string ClaudeConnectionStatus { get => _claudeConnectionStatus; private set => Set(ref _claudeConnectionStatus, value); }
-    public string CodexConnectionStatus { get => _codexConnectionStatus; private set => Set(ref _codexConnectionStatus, value); }
-    public bool IsConnecting { get => _connecting; private set { Set(ref _connecting, value); Raise(nameof(CanConnect)); } }
-    public bool CanConnect => !IsConnecting;
-    public bool IsLoggingIn => _connectionCts is not null;
-    public AiUsageViewModel ClaudeUsage => _main.ClaudeUsage;
-    public AiUsageViewModel CodexUsage => _main.CodexUsage;
-
-    public async Task CheckConnectionsAsync()
-    {
-        int generation = _connectionGeneration;
-        try
-        {
-            var status = await Task.Run(() => (Claude: _claudeConnection.IsConnected(), Codex: CodexUsageReader.IsAvailable));
-            if (_disposed || generation != _connectionGeneration) return;
-            ClaudeConnectionStatus = status.Claude ? "연결됨 · Claude Code의 다음 응답을 기다립니다." : "연결 버튼을 누르면 자동으로 설정합니다.";
-            if (!status.Codex) CodexConnectionStatus = "Codex가 설치되어 있지 않습니다. 설치 안내를 확인하세요.";
-        }
-        catch { if (!_disposed && generation == _connectionGeneration) ClaudeConnectionStatus = "설정을 확인할 수 없습니다. 연결 버튼으로 다시 시도하세요."; }
-    }
-
-    public async Task ConnectClaudeAsync(bool disconnect = false)
-    {
-        if (IsConnecting || _disposed) return;
-        _connectionGeneration++;
-        IsConnecting = true;
-        try
-        {
-            if (disconnect)
-            {
-                await Task.Run(_claudeConnection.Disconnect);
-                if (_disposed) return;
-                ShowClaudeUsage = false;
-                ClaudeUsage.Update(new([], DateTimeOffset.UtcNow, "연결 해제됨"));
-                ClaudeConnectionStatus = "연결 해제됨 · 기존 상태줄 설정을 유지합니다.";
-            }
-            else
-            {
-                if (!await Task.Run(() => ClaudeConnectionService.IsCliAvailable))
-                {
-                    ClaudeConnectionStatus = "Claude Code가 설치되어 있지 않습니다. 설치 안내를 확인하세요.";
-                    return;
-                }
-                await Task.Run(_claudeConnection.Connect);
-                if (_disposed) return;
-                ShowClaudeUsage = true;
-                ClaudeConnectionStatus = "연결 완료 · Claude Code를 새로 열고 응답을 받으면 표시됩니다.";
-                ClaudeUsage.Update(new([], DateTimeOffset.UtcNow, "연결 완료 · Claude Code의 새 세션에서 응답을 기다립니다."));
-            }
-        }
-        catch (IOException) { if (!_disposed) ClaudeConnectionStatus = "설정 저장에 실패했습니다. 다른 설정 작업이 끝난 뒤 다시 연결하세요."; }
-        catch { if (!_disposed) ClaudeConnectionStatus = "자동 연결에 실패했습니다. 설정 파일 형식과 쓰기 권한을 확인하세요."; }
-        finally { IsConnecting = false; }
-    }
-
-    public async Task ConnectCodexAsync()
-    {
-        if (IsConnecting || _disposed) return;
-        _connectionGeneration++;
-        IsConnecting = true;
-        using var cancellation = new CancellationTokenSource();
-        _connectionCts = cancellation;
-        Raise(nameof(IsLoggingIn));
-        CodexConnectionStatus = "연결 확인 중 · 로그인 화면이 열리면 브라우저에서 완료하세요.";
-        try
-        {
-            if (!await Task.Run(() => CodexUsageReader.IsAvailable))
-            {
-                CodexConnectionStatus = "Codex가 설치되어 있지 않습니다. 설치 안내를 확인하세요.";
-                return;
-            }
-            var snapshot = await _main.ConnectCodexAsync(OpenLoginBrowser, cancellation.Token);
-            if (_disposed) return;
-            ShowCodexUsage = true;
-            CodexUsage.Update(snapshot);
-            CodexConnectionStatus = snapshot.Notice ?? "연결 완료 · 사용량을 자동으로 갱신합니다.";
-        }
-        catch (OperationCanceledException)
-        {
-            if (!_disposed) CodexConnectionStatus = cancellation.IsCancellationRequested ? "연결을 취소했습니다." : "로그인 시간이 초과되었습니다. 다시 연결하세요.";
-        }
-        catch { if (!_disposed) CodexConnectionStatus = "연결에 실패했습니다. 인터넷 연결을 확인하고 다시 시도하세요."; }
-        finally { _connectionCts = null; Raise(nameof(IsLoggingIn)); IsConnecting = false; }
-    }
-
-    public void DisconnectCodex()
-    {
-        if (IsConnecting || _disposed) return;
-        _connectionGeneration++;
-        ShowCodexUsage = false;
-        CodexUsage.Update(new([], DateTimeOffset.UtcNow, "연결 해제됨"));
-        CodexConnectionStatus = "연결 해제됨 · Codex 로그인은 유지하고 SysGlass 조회를 중단합니다.";
-    }
-
-    private static void OpenLoginBrowser(Uri uri) => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-    public void CancelConnection() => _connectionCts?.Cancel();
 
     public SettingsViewModel(MainViewModel main, IMainWindowController controller)
     {
@@ -153,8 +47,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     }
 
     // ── 표시 항목 ──
-    public bool ShowClaudeUsage { get => _s.ShowClaudeUsage; set => Put(_s.ShowClaudeUsage, value, v => _s.ShowClaudeUsage = v); }
-    public bool ShowCodexUsage { get => _s.ShowCodexUsage; set => Put(_s.ShowCodexUsage, value, v => _s.ShowCodexUsage = v); }
     public bool ShowCpuUsage { get => _s.ShowCpuUsage; set => Put(_s.ShowCpuUsage, value, v => _s.ShowCpuUsage = v); }
     public bool ShowCpuTemp { get => _s.ShowCpuTemp; set => Put(_s.ShowCpuTemp, value, v => _s.ShowCpuTemp = v); }
     public bool ShowCpuPower { get => _s.ShowCpuPower; set => Put(_s.ShowCpuPower, value, v => _s.ShowCpuPower = v); }
@@ -169,6 +61,51 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     public bool ShowDiskWrite { get => _s.ShowDiskWrite; set => Put(_s.ShowDiskWrite, value, v => _s.ShowDiskWrite = v); }
     public bool ShowNetDown { get => _s.ShowNetDown; set => Put(_s.ShowNetDown, value, v => _s.ShowNetDown = v); }
     public bool ShowNetUp { get => _s.ShowNetUp; set => Put(_s.ShowNetUp, value, v => _s.ShowNetUp = v); }
+    public bool ShowPagedPool { get => _s.ShowPagedPool; set => Put(_s.ShowPagedPool, value, v => _s.ShowPagedPool = v); }
+    public bool ShowNonPagedPool { get => _s.ShowNonPagedPool; set => Put(_s.ShowNonPagedPool, value, v => _s.ShowNonPagedPool = v); }
+    public bool ShowPoolGrowth { get => _s.ShowPoolGrowth; set => Put(_s.ShowPoolGrowth, value, v => _s.ShowPoolGrowth = v); }
+    public bool ShowUptime { get => _s.ShowUptime; set => Put(_s.ShowUptime, value, v => _s.ShowUptime = v); }
+    public bool ShowMemoryStatus { get => _s.ShowMemoryStatus; set => Put(_s.ShowMemoryStatus, value, v => _s.ShowMemoryStatus = v); }
+
+    // ── 메모리 감시 ──
+    public bool MemoryWatchEnabled { get => _s.MemoryWatchEnabled; set => Put(_s.MemoryWatchEnabled, value, v => _s.MemoryWatchEnabled = v); }
+    public bool MemAlertsEnabled { get => _s.MemAlertsEnabled; set => Put(_s.MemAlertsEnabled, value, v => _s.MemAlertsEnabled = v); }
+    public int MemColorScheme { get => _s.MemColorScheme; set => Put(_s.MemColorScheme, Math.Clamp(value, 0, 1), v => _s.MemColorScheme = v); }
+
+    public int MemKernelIntervalSec { get => _s.MemKernelIntervalSec; set => PutInt(_s.MemKernelIntervalSec, value, 1, 60, v => _s.MemKernelIntervalSec = v); }
+    public int MemResidentIntervalSec { get => _s.MemResidentIntervalSec; set => PutInt(_s.MemResidentIntervalSec, value, 5, 600, v => _s.MemResidentIntervalSec = v); }
+    public int MemPoolTagIntervalSec { get => _s.MemPoolTagIntervalSec; set => PutInt(_s.MemPoolTagIntervalSec, value, 15, 3600, v => _s.MemPoolTagIntervalSec = v); }
+    public int MemProcessIntervalSec { get => _s.MemProcessIntervalSec; set => PutInt(_s.MemProcessIntervalSec, value, 15, 3600, v => _s.MemProcessIntervalSec = v); }
+    public bool MemLogEnabled { get => _s.MemLogEnabled; set => Put(_s.MemLogEnabled, value, v => _s.MemLogEnabled = v); }
+    public int MemRetentionDays { get => _s.MemRetentionDays; set => PutInt(_s.MemRetentionDays, value, 1, 365, v => _s.MemRetentionDays = v); }
+    public int MemLogMaxMb { get => _s.MemLogMaxMb; set => PutInt(_s.MemLogMaxMb, value, 10, 4096, v => _s.MemLogMaxMb = v); }
+    public int MemUptimeIntervalSec { get => _s.MemUptimeIntervalSec; set => PutInt(_s.MemUptimeIntervalSec, value, 5, 3600, v => _s.MemUptimeIntervalSec = v); }
+
+    // 감지 기준: 주의 < 위험이 되도록(가용 RAM은 주의 > 위험) 반대쪽 값을 넘지 않게 보정한다.
+    public int MemPagedWarnMb { get => _s.MemPagedWarnMb; set => PutInt(_s.MemPagedWarnMb, value, AppSettings.PoolMbRange.Min, _s.MemPagedHighMb - 1, v => _s.MemPagedWarnMb = v); }
+    public int MemPagedHighMb { get => _s.MemPagedHighMb; set => PutInt(_s.MemPagedHighMb, value, _s.MemPagedWarnMb + 1, AppSettings.PoolMbRange.Max, v => _s.MemPagedHighMb = v); }
+    public int MemNonPagedWarnMb { get => _s.MemNonPagedWarnMb; set => PutInt(_s.MemNonPagedWarnMb, value, AppSettings.PoolMbRange.Min, _s.MemNonPagedHighMb - 1, v => _s.MemNonPagedWarnMb = v); }
+    public int MemNonPagedHighMb { get => _s.MemNonPagedHighMb; set => PutInt(_s.MemNonPagedHighMb, value, _s.MemNonPagedWarnMb + 1, AppSettings.PoolMbRange.Max, v => _s.MemNonPagedHighMb = v); }
+    public int MemPoolTagWarnMb { get => _s.MemPoolTagWarnMb; set => PutInt(_s.MemPoolTagWarnMb, value, AppSettings.TagMbRange.Min, _s.MemPoolTagHighMb - 1, v => _s.MemPoolTagWarnMb = v); }
+    public int MemPoolTagHighMb { get => _s.MemPoolTagHighMb; set => PutInt(_s.MemPoolTagHighMb, value, _s.MemPoolTagWarnMb + 1, AppSettings.TagMbRange.Max, v => _s.MemPoolTagHighMb = v); }
+    public int MemGrowthWarnMbPerHour { get => _s.MemGrowthWarnMbPerHour; set => PutInt(_s.MemGrowthWarnMbPerHour, value, AppSettings.GrowthRange.Min, _s.MemGrowthHighMbPerHour - 1, v => _s.MemGrowthWarnMbPerHour = v); }
+    public int MemGrowthHighMbPerHour { get => _s.MemGrowthHighMbPerHour; set => PutInt(_s.MemGrowthHighMbPerHour, value, _s.MemGrowthWarnMbPerHour + 1, AppSettings.GrowthRange.Max, v => _s.MemGrowthHighMbPerHour = v); }
+    public int MemCommitWarnPercent { get => _s.MemCommitWarnPercent; set => PutInt(_s.MemCommitWarnPercent, value, AppSettings.CommitRange.Min, _s.MemCommitHighPercent - 1, v => _s.MemCommitWarnPercent = v); }
+    public int MemCommitHighPercent { get => _s.MemCommitHighPercent; set => PutInt(_s.MemCommitHighPercent, value, _s.MemCommitWarnPercent + 1, AppSettings.CommitRange.Max, v => _s.MemCommitHighPercent = v); }
+    public int MemAvailWarnPercent { get => _s.MemAvailWarnPercent; set => PutInt(_s.MemAvailWarnPercent, value, _s.MemAvailHighPercent + 1, AppSettings.AvailRange.Max, v => _s.MemAvailWarnPercent = v); }
+    public int MemAvailHighPercent { get => _s.MemAvailHighPercent; set => PutInt(_s.MemAvailHighPercent, value, AppSettings.AvailRange.Min, _s.MemAvailWarnPercent - 1, v => _s.MemAvailHighPercent = v); }
+    public int MemAlertSustainMin { get => _s.MemAlertSustainMin; set => PutInt(_s.MemAlertSustainMin, value, AppSettings.SustainRange.Min, AppSettings.SustainRange.Max, v => _s.MemAlertSustainMin = v); }
+    public int MemAlertRepeatMin { get => _s.MemAlertRepeatMin; set => PutInt(_s.MemAlertRepeatMin, value, AppSettings.RepeatRange.Min, AppSettings.RepeatRange.Max, v => _s.MemAlertRepeatMin = v); }
+
+    /// <summary>정수 설정을 범위로 보정해 저장한다. 보정 결과가 현재 값과 같아도 화면 입력값을 되돌리도록 알린다.</summary>
+    private void PutInt(int cur, int value, int min, int max, Action<int> assign, [CallerMemberName] string? prop = null)
+    {
+        value = Math.Clamp(value, min, Math.Max(min, max));
+        if (value == cur) { Raise(prop); return; }
+        assign(value);
+        Raise(prop);
+        _main.NotifySettingsChanged(prop ?? string.Empty);
+    }
 
     // ── 화면 및 디자인 ──
     /// <summary>불투명도(%). 20~100</summary>
@@ -246,8 +183,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _disposed = true;
-        _connectionCts?.Cancel();
         _controller.ControllerStateChanged -= OnControllerChanged;
     }
 }

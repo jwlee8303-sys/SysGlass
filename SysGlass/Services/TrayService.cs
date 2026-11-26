@@ -18,7 +18,9 @@ public sealed class TrayService : IDisposable
     public Func<bool>? GetClickThrough { get; set; }
     public Func<bool>? GetVisible { get; set; }
 
-    public bool Initialize(Action toggleVisible, Action toggleTopmost, Action toggleClickThrough, Action openSettings, Action exit)
+    /// <param name="memoryMenu">메모리 감시 메뉴 항목(표시 문구, 동작). 없으면 생략한다.</param>
+    public bool Initialize(Action toggleVisible, Action toggleTopmost, Action toggleClickThrough, Action openSettings, Action exit,
+        IReadOnlyList<(string Text, Action Click)>? memoryMenu = null)
     {
         try
         {
@@ -28,7 +30,13 @@ public sealed class TrayService : IDisposable
             _clickThrough = new ToolStripMenuItem("마우스 클릭 통과 (Ctrl+Alt+F10)", null, (_, _) => toggleClickThrough());
             _settings = new ToolStripMenuItem("설정...", null, (_, _) => openSettings());
             var quit = new ToolStripMenuItem("종료", null, (_, _) => exit());
-            menu.Items.AddRange([_toggleVisible, _topmost, _clickThrough, _settings, new ToolStripSeparator(), quit]);
+            menu.Items.AddRange([_toggleVisible, _topmost, _clickThrough, _settings]);
+            if (memoryMenu is { Count: > 0 })
+            {
+                menu.Items.Add(new ToolStripSeparator());
+                foreach (var (text, click) in memoryMenu) menu.Items.Add(new ToolStripMenuItem(text, null, (_, _) => click()));
+            }
+            menu.Items.AddRange([new ToolStripSeparator(), quit]);
             menu.Opening += (_, _) =>
             {
                 _topmost.Checked = GetTopmost?.Invoke() ?? false;
@@ -53,6 +61,19 @@ public sealed class TrayService : IDisposable
             return false;
         }
     }
+
+    /// <summary>알림 영역 알림을 표시한다(Windows 11에서는 알림 센터 토스트로 표시). UI 스레드에서 호출해야 한다.</summary>
+    public void ShowNotification(string title, string text, bool warning)
+    {
+        try
+        {
+            // 풍선 알림 문자열은 길이 제한이 있어 넘치면 잘라낸다.
+            _icon?.ShowBalloonTip(10_000, Trim(title, 63), Trim(text, 255), warning ? ToolTipIcon.Warning : ToolTipIcon.Info);
+        }
+        catch (Exception ex) { Logger.Error("트레이 알림 표시 실패", ex); }
+    }
+
+    private static string Trim(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
 
     /// <summary>간단한 유리 느낌의 아이콘을 코드로 그린다.</summary>
     private static Icon CreateIcon()
