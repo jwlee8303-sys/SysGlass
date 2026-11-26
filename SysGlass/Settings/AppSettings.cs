@@ -19,6 +19,8 @@ public sealed class AppSettings
     /// <summary>글자 크기 단계: 0=작게, 1=보통, 2=크게</summary>
     public int FontSizeLevel { get; set; } = 1;
     public double WindowWidth { get; set; } = 280;
+    /// <summary>컴팩트 보기: 사용률 막대를 숨기고 구역 간격을 줄인다.</summary>
+    public bool CompactMode { get; set; }
 
     // ── 동작 ──
     public bool AlwaysOnTop { get; set; } = true;

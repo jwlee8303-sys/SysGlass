@@ -62,6 +62,24 @@
             </Setter>
         </Style>
 
+        <!-- 구역 아래 여백. 컴팩트 보기에서는 간격을 줄인다 -->
+        <Style x:Key="Section" TargetType="FrameworkElement">
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.CompactMode, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="Margin" Value="0,0,0,4"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CpuValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{DynamicResource FsLarge}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding CompactMode}" Value="True">
+                    <Setter Property="FontSize" Value="{DynamicResource FsBase}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="Label" TargetType="TextBlock">
             <Setter Property="Foreground" Value="#9DA0A6"/>
             <Setter Property="FontSize" Value="{DynamicResource FsLabel}"/>
@@ -136,14 +154,14 @@
                                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}"/>
 
                     <!-- CPU -->
-                    <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowCpuBlock, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Style="{StaticResource Section}" Visibility="{Binding ShowCpuBlock, Converter={StaticResource BoolToVis}}">
                         <DockPanel>
                             <TextBlock Text="CPU" Style="{StaticResource Label}" VerticalAlignment="Bottom"/>
-                            <TextBlock Text="{Binding CpuText}" FontSize="{DynamicResource FsLarge}" FontWeight="SemiBold" HorizontalAlignment="Right"
+                            <TextBlock Text="{Binding CpuText}" Style="{StaticResource CpuValue}" FontWeight="SemiBold" HorizontalAlignment="Right"
                                        Visibility="{Binding ShowCpuUsage, Converter={StaticResource BoolToVis}}"/>
                         </DockPanel>
                         <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding CpuPercent, Mode=OneWay}" Margin="0,4,0,0"
-                                     Visibility="{Binding ShowCpuUsage, Converter={StaticResource BoolToVis}}"/>
+                                     Visibility="{Binding ShowCpuBar, Converter={StaticResource BoolToVis}}"/>
                         <DockPanel Margin="0,4,0,0" Visibility="{Binding ShowCpuSubRow, Converter={StaticResource BoolToVis}}"
                                    ToolTip="{Binding CpuName}">
                             <TextBlock Text="{Binding CpuTempText}" Foreground="{Binding CpuTempBrush}" ToolTip="{Binding SensorNotice}"
@@ -156,16 +174,17 @@
                     </StackPanel>
 
                     <!-- RAM -->
-                    <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowRamUsage, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Style="{StaticResource Section}" Visibility="{Binding ShowRamUsage, Converter={StaticResource BoolToVis}}">
                         <DockPanel>
                             <TextBlock Text="RAM" Style="{StaticResource Label}" VerticalAlignment="Bottom"/>
                             <TextBlock Text="{Binding RamText}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
                         </DockPanel>
-                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding RamPercent, Mode=OneWay}" Foreground="#9CDB7F" Margin="0,4,0,0"/>
+                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding RamPercent, Mode=OneWay}" Foreground="#9CDB7F" Margin="0,4,0,0"
+                                     Visibility="{Binding ShowRamBar, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
 
                     <!-- 커널 메모리: 측정하지 못한 값은 N/A·미측정으로 표시 -->
-                    <StackPanel Margin="0,0,0,10" DataContext="{Binding Memory}"
+                    <StackPanel Style="{StaticResource Section}" DataContext="{Binding Memory}"
                                 Visibility="{Binding DataContext.ShowKernelMemory, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                         <DockPanel ToolTip="{Binding PagedPoolTip}"
                                    Visibility="{Binding DataContext.ShowPagedPool, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
@@ -200,7 +219,7 @@
                                   Visibility="{Binding ShowGpuSection, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,0,0,10">
+                                <StackPanel Style="{StaticResource Section}">
                                     <TextBlock Text="{Binding Name}" Style="{StaticResource Label}" TextTrimming="CharacterEllipsis"/>
                                     <DockPanel Margin="0,2,0,0"
                                                Visibility="{Binding DataContext.ShowGpuHeader, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
@@ -215,13 +234,14 @@
                                         </StackPanel>
                                     </DockPanel>
                                     <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding Usage, Mode=OneWay}" Foreground="#C79BFF" Margin="0,4,0,0"
-                                                 Visibility="{Binding DataContext.ShowGpuUsage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
+                                                 Visibility="{Binding DataContext.ShowGpuBar, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                     <StackPanel Visibility="{Binding DataContext.ShowVram, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                                         <DockPanel Margin="0,4,0,0">
                                             <TextBlock Text="VRAM" Style="{StaticResource Label}"/>
                                             <TextBlock Text="{Binding VramText}" HorizontalAlignment="Right"/>
                                         </DockPanel>
-                                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding VramPercent, Mode=OneWay}" Foreground="#E6A3FF" Margin="0,3,0,0"/>
+                                        <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding VramPercent, Mode=OneWay}" Foreground="#E6A3FF" Margin="0,3,0,0"
+                                                 Visibility="{Binding DataContext.ShowVramBar, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </DataTemplate>
@@ -233,7 +253,7 @@
                                   Visibility="{Binding ShowDiskSection, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,0,0,10" ToolTip="{Binding Model}">
+                                <StackPanel Style="{StaticResource Section}" ToolTip="{Binding Model}">
                                     <DockPanel>
                                         <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
@@ -246,7 +266,7 @@
                                         </StackPanel>
                                     </DockPanel>
                                     <ProgressBar Style="{StaticResource UsageBar}" Value="{Binding Usage, Mode=OneWay}" Foreground="#FFB86B" Margin="0,4,0,0"
-                                                 Visibility="{Binding DataContext.ShowDiskUsage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
+                                                 Visibility="{Binding DataContext.ShowDiskBar, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                     <TextBlock Text="{Binding IoText}" Style="{StaticResource Label}" Margin="0,3,0,0"
                                                Visibility="{Binding DataContext.ShowDiskIo, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>

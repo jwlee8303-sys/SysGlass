@@ -94,6 +94,14 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     public bool ShowDiskBoth => ShowDiskUsage && ShowDiskTemp;
     public bool ShowDiskSection => ShowDiskUsage || ShowDiskTemp || ShowDiskIo;
 
+    // ── 컴팩트 보기: 막대를 숨기고 간격·큰 글씨를 줄인다 ──
+    public bool CompactMode => _settings.CompactMode;
+    public bool ShowCpuBar => ShowCpuUsage && !CompactMode;
+    public bool ShowRamBar => !CompactMode;
+    public bool ShowGpuBar => ShowGpuUsage && !CompactMode;
+    public bool ShowVramBar => !CompactMode;
+    public bool ShowDiskBar => ShowDiskUsage && !CompactMode;
+
     public bool HasAnything => ShowCpuBlock || ShowRamUsage || ShowGpuSection || ShowDiskSection || ShowNetwork || ShowKernelMemory;
     public bool IsEmpty => !HasAnything;
 

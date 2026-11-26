@@ -194,6 +194,9 @@
                             <RadioButton Content="크게" GroupName="Font" IsChecked="{Binding FontSizeLevel, Converter={StaticResource EqualsConv}, ConverterParameter=2}"/>
                         </StackPanel>
 
+                        <CheckBox Content="컴팩트 보기" IsChecked="{Binding CompactMode}" Margin="0,12,0,0"/>
+                        <TextBlock Text="사용률 막대를 숨기고 항목 간격과 CPU 사용률 글씨를 줄여 창을 작게 보여 줍니다." Style="{StaticResource Hint}"/>
+
                         <DockPanel Margin="0,12,0,0">
                             <TextBlock Text="{Binding WindowWidth, StringFormat={}{0:0} px}" DockPanel.Dock="Right" Width="64" TextAlignment="Right"/>
                             <TextBlock Text="창 너비"/>
@@ -377,6 +380,14 @@
                         <TextBlock Text="기본값 복원" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="아래 왼쪽의 [기본값 복원] 버튼으로 표시 항목, 디자인, 갱신 주기, 온도 기준 등을 기본값으로 되돌립니다. 확인 창에서 창 위치와 너비까지 복원할지 선택할 수 있습니다."
                                    Style="{StaticResource Hint}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 7. 버전 정보 -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="버전 정보" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="{Binding AppVersionText}"/>
                     </StackPanel>
                 </Border>
             </StackPanel>

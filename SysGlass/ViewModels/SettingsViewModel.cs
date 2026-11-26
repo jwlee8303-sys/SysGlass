@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Reflection;
+using System.Runtime.CompilerServices;
 using SysGlass.Settings;
 
 namespace SysGlass.ViewModels;
@@ -30,6 +31,17 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
 
     public DeviceSelectionViewModel Gpus => _main.GpuSelection;
     public DeviceSelectionViewModel Disks => _main.DiskSelection;
+
+    /// <summary>설정 창 하단에 표시할 앱 버전(예: "SysGlass 1.2.0"). 빌드 메타데이터(+커밋)는 제외한다.</summary>
+    public string AppVersionText { get; } = BuildVersionText();
+
+    private static string BuildVersionText()
+    {
+        var asm = typeof(SettingsViewModel).Assembly;
+        var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var version = info?.Split('+')[0] ?? asm.GetName().Version?.ToString(3) ?? "알 수 없음";
+        return $"SysGlass {version}";
+    }
 
     private void OnControllerChanged()
     {
@@ -115,6 +127,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         set => Put(_s.BackgroundOpacity, Math.Clamp(Math.Round(value) / 100.0, 0.2, 1.0), v => _s.BackgroundOpacity = v);
     }
 
+    public bool CompactMode { get => _s.CompactMode; set => Put(_s.CompactMode, value, v => _s.CompactMode = v); }
     public int FontSizeLevel { get => _s.FontSizeLevel; set => Put(_s.FontSizeLevel, Math.Clamp(value, 0, 2), v => _s.FontSizeLevel = v); }
 
     public double WindowWidth
