@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-26
+
 ### Added
 
 - 메모리 감시 1단계: 페이징 풀·비페이징 풀·커밋·물리 메모리(GetPerformanceInfo, GlobalMemoryStatusEx), 페이징 풀 상주량(PDH 카운터), 시스템 가동 시간을 기존 센서 루프와 분리된 백그라운드 작업에서 항목별 주기로 수집.
