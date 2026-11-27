@@ -21,6 +21,9 @@ public partial class MemoryWindow : Window
         InitializeComponent();
         SourceInitialized += (_, _) => WindowStyleHelper.UseDarkTitleBar(new WindowInteropHelper(this).Handle);
         _vm.SortChanged += UpdateHeaders;
+        void UpdateActivity() => _vm.SetDisplayActive(IsVisible && WindowState != WindowState.Minimized);
+        IsVisibleChanged += (_, _) => UpdateActivity();
+        StateChanged += (_, _) => UpdateActivity();
         Loaded += (_, _) => { _vm.Start(); UpdateHeaders(); };
         Closed += (_, _) => { _vm.SortChanged -= UpdateHeaders; _vm.Dispose(); };
     }

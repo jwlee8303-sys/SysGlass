@@ -6,6 +6,8 @@ namespace SysGlass
 {
     public partial class App : Application
     {
+        private Mutex? _instance;
+
         public App()
         {
             // 처리되지 않은 예외는 로그만 남기고 프로그램이 종료되지 않게 한다.
@@ -26,7 +28,21 @@ namespace SysGlass
                 Shutdown();
                 return;
             }
+            var options = new NamedWaitHandleOptions { CurrentUserOnly = true, CurrentSessionOnly = true };
+            _instance = new Mutex(false, "SysGlass.Main", options, out bool first);
+            if (!first)
+            {
+                Shutdown();
+                return;
+            }
             base.OnStartup(e);
+            new MainWindow().Show();
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            _instance?.Dispose();
+            base.OnExit(e);
         }
 
         private static void OnUiException(object sender, DispatcherUnhandledExceptionEventArgs e)

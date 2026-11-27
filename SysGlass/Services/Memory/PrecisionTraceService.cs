@@ -22,7 +22,7 @@ public sealed class PrecisionTraceService : IDisposable
     /// <summary>wpr가 '실행 중인 기록 없음'을 알리는 종료 코드.</summary>
     private const int NoTraceRunning = unchecked((int)0xC5583000);
 
-    public enum TraceState { Idle, Starting, Recording, Stopping }
+    public enum TraceState { Idle, Starting, Recording, Stopping, CancelFailed }
     public sealed record Options(IReadOnlyList<string> Tags, int Minutes, int BufferMb);
 
     private readonly string _dir;
@@ -30,7 +30,15 @@ public sealed class PrecisionTraceService : IDisposable
     private CancellationTokenSource? _timer;
     private volatile bool _disposed;
 
-    public PrecisionTraceService(string directory) => _dir = directory;
+    private readonly Func<TimeSpan, string[], Task<(int Code, string Output)>> _run;
+
+    public PrecisionTraceService(string directory) : this(directory, RunWpr) { }
+
+    internal PrecisionTraceService(string directory, Func<TimeSpan, string[], Task<(int Code, string Output)>> run)
+    {
+        _dir = directory;
+        _run = run;
+    }
 
     public string Directory => _dir;
     public static string WprPath => Path.Combine(Environment.SystemDirectory, "wpr.exe");
@@ -106,11 +114,12 @@ public sealed class PrecisionTraceService : IDisposable
     public async Task<string?> StartAsync(Options o)
     {
         if (_disposed) return "종료 중입니다.";
-        if (!await _gate.WaitAsync(0)) return "다른 정밀 추적 작업이 진행 중입니다.";
+        if (!await _gate.WaitAsync(0).ConfigureAwait(false)) return "다른 정밀 추적 작업이 진행 중입니다.";
         try
         {
+            if (_disposed) return "종료 중입니다.";
             if (State != TraceState.Idle) return "이미 정밀 추적이 진행 중입니다.";
-            if (!IsAvailable) return "Windows Performance Recorder(wpr.exe)를 찾을 수 없습니다.";
+
             if (o.Minutes < MinutesRange.Min || o.Minutes > MinutesRange.Max || o.BufferMb < BufferMbRange.Min || o.BufferMb > BufferMbRange.Max)
                 return "기록 시간 또는 버퍼 크기가 허용 범위를 벗어났습니다.";
             System.IO.Directory.CreateDirectory(_dir);
@@ -122,63 +131,81 @@ public sealed class PrecisionTraceService : IDisposable
             LastError = null;
             Cleanup(DateTime.UtcNow);
             string profile = Path.Combine(_dir, "SysGlassPool.wprp");
-            await File.WriteAllTextAsync(profile, BuildProfile(o), new UTF8Encoding(false));
+            await File.WriteAllTextAsync(profile, BuildProfile(o), new UTF8Encoding(false)).ConfigureAwait(false);
 
             // 이전 실행이 비정상 종료돼 남은 '자기' 인스턴스만 정리한다(다른 세션은 건드리지 않음).
-            await RunWpr(TimeSpan.FromSeconds(30), "-cancel", "-instancename", InstanceName);
-            var (code, output) = await RunWpr(TimeSpan.FromSeconds(60), "-start", profile + "!" + ProfileName, "-instancename", InstanceName);
+            if (await CancelSessionAsync().ConfigureAwait(false) is { } cancelError)
+            {
+                LastError = cancelError;
+                SetState(TraceState.CancelFailed, o);
+                return cancelError;
+            }
+            var (code, output) = await _run(TimeSpan.FromSeconds(60), ["-start", profile + "!" + ProfileName, "-instancename", InstanceName]).ConfigureAwait(false);
             if (code != 0)
             {
-                SetState(TraceState.Idle, null);
-                return LastError = code == unchecked((int)0x80070005)
+                var cleanupError = await CancelSessionAsync().ConfigureAwait(false);
+                LastError = cleanupError ?? (code == unchecked((int)0x80070005)
                     ? "정밀 추적에는 관리자 권한이 필요합니다 (코드 0x80070005)."
-                    : $"정밀 추적을 시작하지 못했습니다 (코드 0x{code:X8}). {Summarize(output)}";
+                    : $"정밀 추적을 시작하지 못했습니다 (코드 0x{code:X8}). {Summarize(output)}");
+                SetState(cleanupError is null ? TraceState.Idle : TraceState.CancelFailed, cleanupError is null ? null : o);
+                return LastError;
             }
 
             var cts = _timer = new CancellationTokenSource();
             EndsAt = DateTimeOffset.Now.AddMinutes(o.Minutes);
             SetState(TraceState.Recording, o);
             _ = Task.Delay(TimeSpan.FromMinutes(o.Minutes), cts.Token)
-                .ContinueWith(t => { if (!t.IsCanceled) _ = StopAsync(save: true); }, TaskScheduler.Default);
+                .ContinueWith(t => { if (!t.IsCanceled) _ = StopAsync(save: true, cts); }, TaskScheduler.Default);
             return null;
         }
         catch (Exception ex)
         {
             Logger.Error("정밀 추적 시작 실패", ex);
+            if (State == TraceState.Starting && await CancelSessionAsync().ConfigureAwait(false) is { } cleanupError)
+            {
+                LastError = cleanupError;
+                SetState(TraceState.CancelFailed, o);
+                return cleanupError;
+            }
+            LastError = "정밀 추적을 시작하지 못했습니다: " + ex.Message;
             SetState(TraceState.Idle, null);
-            return LastError = "정밀 추적을 시작하지 못했습니다: " + ex.Message;
+            return LastError;
         }
         finally { _gate.Release(); }
     }
 
     /// <summary>기록을 멈춘다. save면 .etl로 저장하고, 아니면 버린다.</summary>
-    public async Task StopAsync(bool save)
+    public Task StopAsync(bool save) => StopAsync(save, null);
+
+    private async Task StopAsync(bool save, CancellationTokenSource? expectedTimer)
     {
-        await _gate.WaitAsync();
-        string? path = null, error = null;
+        await _gate.WaitAsync().ConfigureAwait(false);
+        string? path = null, error = null, cancelError = null;
         try
         {
-            if (State != TraceState.Recording) return;
+            if (expectedTimer is not null && expectedTimer != _timer) return;
+            if (State != TraceState.Recording && (save || State != TraceState.CancelFailed)) return;
             _timer?.Cancel();
             SetState(TraceState.Stopping, Current);
             if (save)
             {
                 path = Path.Combine(_dir, $"sysglass-pool-{DateTime.Now:yyyyMMdd-HHmmss}.etl");
                 // 병합에 시간이 걸릴 수 있다. -skipPdbGen으로 추가 심볼 파일 생성을 막는다.
-                var (code, output) = await RunWpr(TimeSpan.FromMinutes(10), "-stop", path, "SysGlass pool trace", "-skipPdbGen", "-instancename", InstanceName);
+                var (code, output) = await _run(TimeSpan.FromMinutes(10), ["-stop", path, "SysGlass pool trace", "-skipPdbGen", "-instancename", InstanceName]).ConfigureAwait(false);
                 if (code != 0 || !File.Exists(path))
                 {
                     error = $"추적 파일을 저장하지 못했습니다 (코드 0x{code:X8}). {Summarize(output)}";
                     path = null;
-                    await RunWpr(TimeSpan.FromSeconds(30), "-cancel", "-instancename", InstanceName);
+                    cancelError = await CancelSessionAsync().ConfigureAwait(false);
                 }
             }
-            else await RunWpr(TimeSpan.FromSeconds(30), "-cancel", "-instancename", InstanceName);
+            else cancelError = await CancelSessionAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Logger.Error("정밀 추적 중지 실패", ex);
             error = "정밀 추적 중지 실패: " + ex.Message;
+            cancelError = await CancelSessionAsync().ConfigureAwait(false);
             path = null;
         }
         finally
@@ -186,15 +213,27 @@ public sealed class PrecisionTraceService : IDisposable
             if (State == TraceState.Stopping)
             {
                 LastPath = path ?? LastPath;
+                if (cancelError is not null) error = string.Join(" ", new[] { error, cancelError }.OfType<string>());
                 LastError = error;
                 _timer?.Dispose();
                 _timer = null;
                 EndsAt = null;
-                SetState(TraceState.Idle, null);
-                Finished?.Invoke(path, error);
+                SetState(cancelError is null ? TraceState.Idle : TraceState.CancelFailed, cancelError is null ? null : Current);
+                try { Finished?.Invoke(path, error); } catch (Exception ex) { Logger.Error("정밀 추적 종료 알림 실패", ex); }
             }
             _gate.Release();
         }
+    }
+
+    private async Task<string?> CancelSessionAsync()
+    {
+        try
+        {
+            var (code, output) = await _run(TimeSpan.FromSeconds(15), ["-cancel", "-instancename", InstanceName]).ConfigureAwait(false);
+            if (code == 0 || code == NoTraceRunning) return null;
+            return $"추적 취소 실패 (0x{code:X8}). 취소를 다시 시도하세요. {Summarize(output)}";
+        }
+        catch (Exception ex) { return "추적 취소 실패. 취소를 다시 시도하세요. " + ex.Message; }
     }
 
     private void SetState(TraceState s, Options? o)
@@ -215,6 +254,7 @@ public sealed class PrecisionTraceService : IDisposable
     /// <summary>wpr.exe를 창 없이 실행한다. 제한 시간을 넘기면 종료시키고 실패로 본다.</summary>
     private static async Task<(int Code, string Output)> RunWpr(TimeSpan timeout, params string[] args)
     {
+        if (!IsAvailable) throw new FileNotFoundException("Windows Performance Recorder(wpr.exe)를 찾을 수 없습니다.");
         var psi = new ProcessStartInfo(WprPath)
         {
             UseShellExecute = false, CreateNoWindow = true,
@@ -225,13 +265,13 @@ public sealed class PrecisionTraceService : IDisposable
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         using var cts = new CancellationTokenSource(timeout);
-        try { await p.WaitForExitAsync(cts.Token); }
+        try { await p.WaitForExitAsync(cts.Token).ConfigureAwait(false); }
         catch (OperationCanceledException)
         {
             try { p.Kill(); } catch { /* 이미 종료 */ }
             return (-1, "wpr.exe 응답 시간 초과");
         }
-        string output = (await stdout) + (await stderr);
+        string output = (await stdout.ConfigureAwait(false)) + (await stderr.ConfigureAwait(false));
         int code = p.ExitCode == NoTraceRunning && args.Contains("-cancel") ? 0 : p.ExitCode;
         return (code, output);
     }
@@ -252,17 +292,12 @@ public sealed class PrecisionTraceService : IDisposable
         catch (Exception ex) { Logger.Error("추적 파일 정리 실패", ex); }
     }
 
-    /// <summary>앱 종료 시 진행 중인 자기 기록만 취소한다(최대 15초 대기).</summary>
+    /// <summary>새 추적을 차단한다. 창 종료 경로에서는 먼저 StopAsync의 완료를 기다린다.</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        _timer?.Cancel();
-        if (State is TraceState.Recording or TraceState.Starting or TraceState.Stopping)
-        {
-            // UI 스레드에서 호출되므로 동기화 컨텍스트 없이 실행해 교착을 피한다.
-            try { Task.Run(() => RunWpr(TimeSpan.FromSeconds(15), "-cancel", "-instancename", InstanceName)).Wait(TimeSpan.FromSeconds(16)); }
-            catch (Exception ex) { Logger.Error("종료 시 정밀 추적 취소 실패", ex); }
-        }
+        StopAsync(save: false).GetAwaiter().GetResult();
+        if (State == TraceState.CancelFailed) Logger.Error(LastError ?? "종료 시 정밀 추적 취소 실패");
     }
 }

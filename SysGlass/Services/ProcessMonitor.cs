@@ -16,6 +16,10 @@ public sealed partial class ProcessMonitor
 
     private readonly Dictionary<int, Prev> _prev = new();
     private readonly GpuProcessCounters _gpu = new();
+    internal const int GpuIntervalSeconds = 5;
+    private long _nextGpu;
+    private Dictionary<int, Dictionary<string, double>>? _gpuByPid;
+    private readonly Dictionary<int, ulong> _gpuOwners = new();
 
     public bool GpuAvailable { get; private set; } = true;
 
@@ -25,8 +29,14 @@ public sealed partial class ProcessMonitor
         int cores = Math.Max(1, Environment.ProcessorCount);
 
         // PID → (엔진 ID → 사용률). 읽지 못하면 null.
-        var gpuByPid = _gpu.Read();
-        GpuAvailable = gpuByPid is not null;
+        bool freshGpu = nowTicks >= _nextGpu;
+        if (freshGpu)
+        {
+            _gpuByPid = _gpu.Read();
+            _gpuOwners.Clear();
+            _nextGpu = nowTicks + GpuIntervalSeconds * Stopwatch.Frequency;
+        }
+        GpuAvailable = _gpuByPid is not null;
 
         var groups = new Dictionary<string, ProcessGroupSample>(StringComparer.OrdinalIgnoreCase);
         var gpuEngines = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
@@ -47,18 +57,15 @@ public sealed partial class ProcessMonitor
                 g.Count++;
                 alive.Add(pid);
 
-                // GPU: 같은 이름의 프로세스는 엔진별로 합산하고, 마지막에 가장 바쁜 엔진 값을 대표값으로 쓴다.
-                if (gpuByPid is not null)
-                {
-                    if (!gpuEngines.TryGetValue(name, out var engines))
-                        gpuEngines[name] = engines = new Dictionary<string, double>();
-                    if (gpuByPid.TryGetValue(pid, out var perEngine))
-                        foreach (var (engine, util) in perEngine)
-                            engines[engine] = engines.GetValueOrDefault(engine) + util;
-                }
+                if (GpuAvailable && !gpuEngines.ContainsKey(name)) gpuEngines[name] = [];
 
                 var h = NativeMethods.OpenProcess(NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-                if (h == IntPtr.Zero) continue; // 보호된 프로세스는 이름만 표시한다. (측정 개수에 포함되지 않음)
+                if (h == IntPtr.Zero)
+                {
+                    if (freshGpu && _gpuByPid?.TryGetValue(pid, out var protectedEngines) == true)
+                        AddEngines(gpuEngines[name], protectedEngines);
+                    continue;
+                }
                 try
                 {
                     g.Measured++;
@@ -73,6 +80,14 @@ public sealed partial class ProcessMonitor
                         cpuTime = k.Value + u.Value; // 100ns 단위
                         create = c.Value;
                         hasTimes = true;
+                    }
+                    if (_gpuByPid is not null && _gpuByPid.TryGetValue(pid, out var perEngine))
+                    {
+                        if (freshGpu && hasTimes) _gpuOwners[pid] = create;
+                        if (freshGpu || (hasTimes && _gpuOwners.TryGetValue(pid, out var owner) && owner == create))
+                        {
+                            AddEngines(gpuEngines[name], perEngine);
+                        }
                     }
                     if (NativeMethods.GetProcessIoCounters(h, out var io))
                     {
@@ -116,6 +131,12 @@ public sealed partial class ProcessMonitor
                 g.GpuPercent = engines.Count == 0 ? 0 : Math.Clamp(engines.Values.Max(), 0, 100);
         }
         return groups.Values.ToList();
+    }
+
+    private static void AddEngines(Dictionary<string, double> totals, Dictionary<string, double> sample)
+    {
+        foreach (var (engine, util) in sample)
+            totals[engine] = totals.GetValueOrDefault(engine) + util;
     }
 
     /// <summary>실행 파일 경로를 조회한다. 버퍼가 부족하면 최대 길이로 한 번 더 시도한다.</summary>

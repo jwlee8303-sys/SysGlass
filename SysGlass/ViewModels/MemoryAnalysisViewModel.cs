@@ -62,6 +62,7 @@ public sealed class MemoryAnalysisViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _searchCts;
     private readonly List<AlertRow> _alerts = [];
     private bool _disposed;
+    private volatile bool _displayActive = true;
 
     public MemoryAnalysisViewModel(MemoryWatchService svc, AppSettings settings)
     {
@@ -154,15 +155,29 @@ public sealed class MemoryAnalysisViewModel : ViewModelBase, IDisposable
 
     // ───────── 갱신 ─────────
 
-    private void OnUpdated(MemoryWatchState s) =>
-        Application.Current?.Dispatcher.BeginInvoke(() => { if (!_disposed) Apply(s, force: false); });
+    public void SetDisplayActive(bool active)
+    {
+        if (_displayActive == active || _disposed) return;
+        _displayActive = active;
+        if (active)
+        {
+            Apply(_svc.Current, force: true);
+            PublishAlerts();
+        }
+    }
+
+    private void OnUpdated(MemoryWatchState s)
+    {
+        if (_displayActive)
+            Application.Current?.Dispatcher.BeginInvoke(() => { if (!_disposed && _displayActive) Apply(s, force: false); });
+    }
 
     private void OnAlerts(IReadOnlyList<MemoryAlert> alerts) =>
         Application.Current?.Dispatcher.BeginInvoke(() =>
         {
             if (_disposed) return;
             foreach (var a in alerts) AddAlert(ToRow(a));
-            PublishAlerts();
+            if (_displayActive) PublishAlerts();
         });
 
     private void OnDiagnostic(string? path, string? error) =>
@@ -334,10 +349,12 @@ public sealed class MemoryAnalysisViewModel : ViewModelBase, IDisposable
     private void AddAlert(AlertRow row)
     {
         if (_alerts.Any(x => x.Time == row.Time && x.Label == row.Label)) return;
-        _alerts.Add(row);
+        int index = _alerts.FindIndex(a => a.Time < row.Time);
+        _alerts.Insert(index < 0 ? _alerts.Count : index, row);
+        if (_alerts.Count > 500) _alerts.RemoveAt(500);
     }
 
-    private void PublishAlerts() => AlertRows = _alerts.OrderByDescending(a => a.Time).Take(500).ToList();
+    private void PublishAlerts() => AlertRows = _alerts.ToList();
 
     /// <summary>최근 두 달의 알림 이력 파일과 현재 세션의 알림을 합쳐 보여준다(최대 500건).</summary>
     private void LoadAlertHistory()
@@ -350,7 +367,8 @@ public sealed class MemoryAnalysisViewModel : ViewModelBase, IDisposable
                     {
                         try
                         {
-                            var j = JsonDocument.Parse(line).RootElement;
+                            using var document = JsonDocument.Parse(line);
+                            var j = document.RootElement;
                             var level = Enum.TryParse<MemoryLevel>(j.GetProperty("level").GetString(), out var l) ? l : MemoryLevel.Unknown;
                             bool flag(string n) => j.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.True;
                             AddAlert(new AlertRow(j.GetProperty("time").GetDateTimeOffset(), MemoryLevelText.Of(level), MemoryBrushes.For(level, _s.MemColorScheme),

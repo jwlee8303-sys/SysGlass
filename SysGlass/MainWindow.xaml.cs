@@ -30,6 +30,7 @@ namespace SysGlass
         private MemoryWindow? _memoryWindow;
         private PrecisionTraceWindow? _traceWindow;
         private bool _systemToolIconsLoaded;
+        private bool _closingTrace;
 
         public event Action? ControllerStateChanged;
 
@@ -58,11 +59,14 @@ namespace SysGlass
             Loaded += async (_, _) => await CheckUpdateOnStartupAsync();
             // 창 핸들이 만들어진 뒤에만 트레이/단축키/Win32 스타일을 다룬다.
             SourceInitialized += OnSourceInitialized;
-            IsVisibleChanged += (_, _) => ApplyClickThrough(); // 핸들/스타일이 바뀌었을 가능성에 대비해 재적용
+            IsVisibleChanged += (_, _) => { ApplyClickThrough(); UpdateDisplayActivity(); };
+            StateChanged += (_, _) => UpdateDisplayActivity();
             SizeChanged += (_, e) => { if (e.HeightChanged) ClampToWorkArea(); };
             Closing += OnClosing;
             SystemEvents_Subscribe();
         }
+
+        private void UpdateDisplayActivity() => _vm.SetDisplayActive(IsVisible && WindowState != WindowState.Minimized);
 
         private IntPtr Hwnd => new System.Windows.Interop.WindowInteropHelper(this).Handle;
 
@@ -109,6 +113,15 @@ namespace SysGlass
                 return false;
             try
             {
+                if (_vm.Trace.State != Services.Memory.PrecisionTraceService.TraceState.Idle)
+                {
+                    await _vm.Trace.StopAsync(save: false);
+                    if (_vm.Trace.State != Services.Memory.PrecisionTraceService.TraceState.Idle)
+                    {
+                        ShowPrecisionTrace();
+                        return false;
+                    }
+                }
                 if (!await UpdateService.PrepareAndLaunchAsync(info, progress)) return false; // 이미 진행 중
             }
             catch (Exception ex)
@@ -360,7 +373,9 @@ namespace SysGlass
                 var vm = new SettingsViewModel(_vm, this);
                 var win = new SettingsWindow(vm) { Topmost = Topmost };
                 _settingsWindow = win;
-                _vm.NeedDeviceScan = true; // 설정 창이 열려 있는 동안 GPU/디스크를 감지
+                void UpdateDeviceScan() => _vm.NeedDeviceScan = win.IsVisible && win.WindowState != WindowState.Minimized;
+                win.IsVisibleChanged += (_, _) => UpdateDeviceScan();
+                win.StateChanged += (_, _) => UpdateDeviceScan();
                 win.Closed += (_, _) =>
                 {
                     _settingsWindow = null;
@@ -579,8 +594,23 @@ namespace SysGlass
                 ClampToWorkArea();
             });
 
-        private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+        private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            if (_closingTrace || _vm.Trace.State != Services.Memory.PrecisionTraceService.TraceState.Idle)
+            {
+                e.Cancel = true;
+                if (_closingTrace) return;
+                _closingTrace = true;
+                try
+                {
+                    await _vm.Trace.StopAsync(save: false);
+                    if (_vm.Trace.State == Services.Memory.PrecisionTraceService.TraceState.Idle)
+                        _ = Dispatcher.BeginInvoke(Close);
+                    else ShowPrecisionTrace();
+                }
+                finally { _closingTrace = false; }
+                return;
+            }
             _saveTimer.Stop();
             if (WindowState == WindowState.Normal)
             {

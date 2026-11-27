@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using SysGlass.Models;
@@ -13,7 +12,9 @@ public static class ProcessCatalog
 {
     private static readonly Dictionary<string, ProcessInfo> Known = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>내장 목록에 없는 프로세스의 추정 결과. 같은 이름이라도 실행 경로가 다르면 다른 프로그램일 수 있어 경로를 키로 쓴다.</summary>
-    private static readonly ConcurrentDictionary<string, ProcessInfo> Resolved = new(StringComparer.OrdinalIgnoreCase);
+    private const int MaxResolvedPaths = 512;
+    private static readonly Dictionary<string, ProcessInfo> Resolved = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Queue<string> ResolvedOrder = new();
     private static readonly string WindowsDirPrefix =
         Path.TrimEndingDirectorySeparator(Environment.GetFolderPath(Environment.SpecialFolder.Windows)) + Path.DirectorySeparatorChar;
 
@@ -130,7 +131,18 @@ public static class ProcessCatalog
         if (string.IsNullOrEmpty(imagePath))
             return new ProcessInfo("설명 정보를 확인할 수 없습니다. (접근 권한이 없는 프로세스)", Importance.Normal);
 
-        var info = Resolved.GetOrAdd(imagePath, p => Resolve(name, p));
+        ProcessInfo info;
+        lock (Resolved)
+        {
+            if (!Resolved.TryGetValue(imagePath, out var cached))
+            {
+                info = Resolve(name, imagePath);
+                if (Resolved.Count >= MaxResolvedPaths) Resolved.Remove(ResolvedOrder.Dequeue());
+                Resolved.Add(imagePath, info);
+                ResolvedOrder.Enqueue(imagePath);
+            }
+            else info = cached;
+        }
         return mixedPaths
             ? info with { Description = info.Description + " (실행 경로가 서로 다른 동명 프로세스 포함)" }
             : info;

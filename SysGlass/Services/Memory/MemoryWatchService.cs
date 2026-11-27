@@ -379,6 +379,7 @@ public sealed class MemoryWatchService : IDisposable
     private void ResetValues()
     {
         lock (_historyLock) _history.Clear();
+        _processes.Reset();
         _events.Reset();
         _tagHistory.Clear();
         _detector.Reset();

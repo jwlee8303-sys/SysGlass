@@ -24,6 +24,8 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _wake;
     private bool _wakeRequested;
     private bool _started;
+    private volatile bool _displayActive = true;
+    private Task? _sampling;
 
     private SystemSnapshot? _lastSnapshot;
     private SensorOptions? _lastOptions;
@@ -45,7 +47,12 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         MemoryService = new MemoryWatchService(settings);
         Trace = new PrecisionTraceService(Path.Combine(MemoryService.LogDirectory, "trace"));
         MemoryService.Updated += state =>
-            Application.Current?.Dispatcher.BeginInvoke(() => { if (!_cts.IsCancellationRequested) Memory.Update(state, _settings.MemColorScheme); });
+        {
+            if (_displayActive) Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                if (_displayActive && !_cts.IsCancellationRequested) Memory.Update(state, _settings.MemColorScheme);
+            });
+        };
         _backgroundBrush = BuildBrush(settings.BackgroundOpacity);
         GpuSelection = new DeviceSelectionViewModel(() => _settings.SelectedGpus, v => _settings.SelectedGpus = v,
             () => NotifySettingsChanged(nameof(AppSettings.SelectedGpus)));
@@ -140,7 +147,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     public bool NeedDeviceScan
     {
         get => _needDeviceScan;
-        set { _needDeviceScan = value; if (_started) Wake(); }
+        set { if (_needDeviceScan == value) return; _needDeviceScan = value; if (_started) Wake(); }
     }
 
     private static Brush BuildBrush(double opacity)
@@ -165,6 +172,14 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             Wake();
         if (_started && (name.StartsWith("Mem") || name == "Reset")) MemoryService.Wake();
         SettingChanged?.Invoke(name);
+    }
+
+    public void SetDisplayActive(bool active)
+    {
+        if (_displayActive == active) return;
+        _displayActive = active;
+        if (active) Memory.Update(MemoryService.Current, _settings.MemColorScheme);
+        if (_started) Wake();
     }
 
     private SensorOptions BuildOptions() => new(
@@ -193,15 +208,25 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         _started = true;
         var token = _cts.Token;
         MemoryService.Start();
-        _ = Task.Run(async () =>
+        _sampling = Task.Run(async () =>
         {
             while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    var options = BuildOptions();
-                    var snap = _monitor.Sample(options);
-                    Application.Current?.Dispatcher.BeginInvoke(() => Apply(snap, options));
+                    if (_displayActive || _needDeviceScan)
+                    {
+                        bool display = _displayActive;
+                        var options = display ? BuildOptions() : new SensorOptions(false, true, true, false);
+                        var snap = _monitor.Sample(options);
+                        if (Application.Current?.Dispatcher is { } dispatcher)
+                            await dispatcher.InvokeAsync(() =>
+                            {
+                                if (token.IsCancellationRequested) return;
+                                if (display && _displayActive) Apply(snap, options);
+                                else if (_needDeviceScan) UpdateDetectedDevices(snap, options);
+                            });
+                    }
                 }
                 catch (Exception ex) { Logger.Error("수집 실패", ex); }
 
@@ -214,7 +239,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                     {
                         _wake?.Dispose();
                         wake = _wake = CancellationTokenSource.CreateLinkedTokenSource(token);
-                        delay = _settings.RefreshIntervalMs;
+                        delay = _displayActive || _needDeviceScan ? _settings.RefreshIntervalMs : Timeout.Infinite;
                     }
                 }
 
@@ -257,10 +282,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             RamText = Format.NA;
         }
 
-        // GPU/디스크: 감지 목록은 설정 화면용으로 갱신하고, 화면에는 선택된 장치만 표시한다.
+        UpdateDetectedDevices(s, options);
         if (options is null || options.Gpu)
         {
-            GpuSelection.UpdateDetected(s.Gpus.Select((g, i) => (g.Id, g.Name, $"GPU {i}: {g.Name}")).ToList());
+
             var all = s.Gpus.Select(g => (g.Id, g.Name)).ToList();
             var shown = s.Gpus.Where(g => ShowGpuSection && GpuSelection.IsIncluded(g.Id, g.Name, all)).ToList();
             Sync(Gpus, shown, g => g.Id, id => new GpuItemViewModel(id, _settings), (vm, g) => vm.Update(g), vm => vm.Id);
@@ -269,7 +294,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         if (options is null || options.Disk)
         {
-            DiskSelection.UpdateDetected(s.Disks.Select(d => (d.Id, d.Name, Format.DiskLabel(d.Number, d.Kind, d.Name))).ToList());
+
             var all = s.Disks.Select(d => (d.Id, d.Name)).ToList();
             var shown = s.Disks.Where(d => ShowDiskSection && DiskSelection.IsIncluded(d.Id, d.Name, all)).ToList();
             Sync(Disks, shown, d => d.Id, id => new DiskItemViewModel(id, _settings), (vm, d) => vm.Update(d), vm => vm.Id);
@@ -280,6 +305,14 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         NetUpText = Format.Rate(s.NetUpBytesPerSec);
 
         UpdateCompactTiles(s);
+    }
+
+    private void UpdateDetectedDevices(SystemSnapshot s, SensorOptions? options)
+    {
+        if (options is null || options.Gpu)
+            GpuSelection.UpdateDetected(s.Gpus.Select((g, i) => (g.Id, g.Name, $"GPU {i}: {g.Name}")).ToList());
+        if (options is null || options.Disk)
+            DiskSelection.UpdateDetected(s.Disks.Select(d => (d.Id, d.Name, Format.DiskLabel(d.Number, d.Kind, d.Name))).ToList());
     }
 
     private static readonly Brush CpuAccent = FrozenBrush(0x4C, 0xC2, 0xFF);
@@ -400,6 +433,11 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         _cts.Cancel();
         Trace.Dispose();
         MemoryService.Dispose();
-        (_monitor as IDisposable)?.Dispose();
+        _ = (_sampling ?? Task.CompletedTask).ContinueWith(_ =>
+        {
+            lock (_wakeLock) _wake?.Dispose();
+            (_monitor as IDisposable)?.Dispose();
+            _cts.Dispose();
+        }, TaskScheduler.Default);
     }
 }

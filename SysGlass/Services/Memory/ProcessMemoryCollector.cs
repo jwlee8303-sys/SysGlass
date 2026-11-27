@@ -100,6 +100,13 @@ public sealed class ProcessMemoryCollector : IDisposable
         return (list, "프로세스 수가 상한을 넘음");
     }
 
+    public void Reset()
+    {
+        _history.Clear();
+        _lastKeys = null;
+        _buffer?.Shrink(512 * 1024);
+    }
+
     public void Dispose()
     {
         _buffer?.Dispose();

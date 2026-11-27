@@ -29,7 +29,10 @@ public partial class ProcessWindow : Window
 
         SourceInitialized += (_, _) => WindowStyleHelper.UseDarkTitleBar(new WindowInteropHelper(this).Handle);
         _vm.SortChanged += UpdateHeaders;
-        Loaded += (_, _) => { UpdateHeaders(); _vm.Start(); };
+        void UpdateActivity() => _vm.SetActive(IsVisible && WindowState != WindowState.Minimized);
+        IsVisibleChanged += (_, _) => UpdateActivity();
+        StateChanged += (_, _) => UpdateActivity();
+        Loaded += (_, _) => { UpdateHeaders(); UpdateActivity(); _vm.Start(); };
         Closed += (_, _) => { _vm.SortChanged -= UpdateHeaders; _vm.Dispose(); };
     }
 

@@ -102,7 +102,10 @@ public sealed class ProcessListViewModel : ViewModelBase, IDisposable
 {
     private const int IntervalMs = 1000;
 
-    private readonly ProcessMonitor _monitor = new();
+    private readonly SemaphoreSlim _wake = new(0, 1);
+    private volatile bool _active;
+    private int _visibilityVersion;
+    private Task? _loop;
     private readonly CancellationTokenSource _cts = new();
     private readonly Dictionary<string, ProcessItemViewModel> _byName = new(StringComparer.OrdinalIgnoreCase);
     private ProcessSortKey _sortKey = ProcessSortKey.Cpu;
@@ -134,24 +137,48 @@ public sealed class ProcessListViewModel : ViewModelBase, IDisposable
         SortChanged?.Invoke();
     }
 
+    public void SetActive(bool active)
+    {
+        if (_active == active || _cts.IsCancellationRequested) return;
+        _active = active;
+        Interlocked.Increment(ref _visibilityVersion);
+        if (_loop is not null && _wake.CurrentCount == 0) _wake.Release();
+    }
+
     public void Start()
     {
+        if (_loop is not null) return;
         var token = _cts.Token;
-        _ = Task.Run(async () =>
+        _loop = Task.Run(async () =>
         {
+            ProcessMonitor? monitor = null;
+            int lastVersion = -1;
             while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    var samples = _monitor.Sample();
+                    if (!_active)
+                    {
+                        await _wake.WaitAsync(token);
+                        continue;
+                    }
+                    int version = Volatile.Read(ref _visibilityVersion);
+                    if (version != lastVersion || monitor is null) monitor = new ProcessMonitor();
+                    lastVersion = version;
+                    var samples = monitor.Sample();
                     // 설명 조회(파일 버전 정보)는 수집 스레드에서 끝내 UI 스레드를 막지 않는다.
                     var resolved = samples.Select(s => (s, info: ProcessCatalog.Get(s.Name, s.ImagePath, s.MixedPaths))).ToList();
-                    bool gpu = _monitor.GpuAvailable;
-                    Application.Current?.Dispatcher.BeginInvoke(() => Apply(resolved, gpu));
+                    bool gpu = monitor.GpuAvailable;
+                    if (Application.Current?.Dispatcher is { } dispatcher)
+                        await dispatcher.InvokeAsync(() =>
+                        {
+                            if (_active && version == _visibilityVersion) Apply(resolved, gpu);
+                        });
                 }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
                 catch (Exception ex) { Logger.Error("프로세스 수집 실패", ex); }
 
-                try { await Task.Delay(IntervalMs, token); }
+                try { await _wake.WaitAsync(IntervalMs, token); }
                 catch (OperationCanceledException) { break; }
             }
         }, token);
@@ -181,7 +208,7 @@ public sealed class ProcessListViewModel : ViewModelBase, IDisposable
 
         Resort();
         int total = data.Sum(d => d.s.Count);
-        Status = $"프로세스 {total}개 · 이름 {data.Count}종 · {IntervalMs / 1000.0:0.#}초마다 갱신";
+        Status = $"프로세스 {total}개 · 이름 {data.Count}종 · 1초마다 갱신 (GPU {ProcessMonitor.GpuIntervalSeconds}초)";
     }
 
     /// <summary>항목을 새로 만들지 않고 Move로 순서만 바꿔 깜빡임과 선택 해제를 막는다.</summary>
@@ -208,6 +235,11 @@ public sealed class ProcessListViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel(); // 수집 작업이 토큰을 아직 쓰고 있을 수 있어 Dispose는 하지 않는다.
+        _cts.Cancel();
+        _ = (_loop ?? Task.CompletedTask).ContinueWith(_ =>
+        {
+            _wake.Dispose();
+            _cts.Dispose();
+        }, TaskScheduler.Default);
     }
 }

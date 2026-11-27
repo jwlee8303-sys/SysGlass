@@ -17,6 +17,7 @@ internal static class MemoryDiagnosticChecks
         WriterChecks(Path.Combine(scratch, "memory-logs"), check);
         EventChecks(check);
         TraceChecks(Path.Combine(scratch, "trace"), check);
+        TraceLifecycleChecks(Path.Combine(scratch, "trace"), check).GetAwaiter().GetResult();
     }
 
     private static void TraceChecks(string dir, Action<bool, string> check)
@@ -56,6 +57,42 @@ internal static class MemoryDiagnosticChecks
         new PrecisionTraceService(dir).Cleanup(now);
         var left = Directory.GetFiles(dir, "sysglass-pool-*.etl").Length;
         check(left == PrecisionTraceService.KeepTraces && File.Exists(other), "trace cleanup keeps recent and foreign files");
+    }
+
+    private static async Task TraceLifecycleChecks(string dir, Action<bool, string> check)
+    {
+        var starting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool failCancel = false;
+        async Task<(int, string)> Run(TimeSpan _, string[] args)
+        {
+            if (args[0] == "-start")
+            {
+                starting.SetResult();
+                await releaseStart.Task;
+            }
+            if (args[0] == "-stop" || (args[0] == "-cancel" && failCancel)) return (1, "failed");
+            return (0, "");
+        }
+
+        using var service = new PrecisionTraceService(dir, Run);
+        var options = new PrecisionTraceService.Options([], 1, 64);
+        var start = service.StartAsync(options);
+        await starting.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var stop = service.StopAsync(save: true);
+        check(!stop.IsCompleted, "stop waits for in-flight trace start");
+        failCancel = true;
+        releaseStart.SetResult();
+        check(await start is null, "trace started with simulated recorder");
+        await stop;
+        check(service.State == PrecisionTraceService.TraceState.CancelFailed && service.LastError is not null,
+            "save and cleanup failure retains retry state");
+        check(await service.StartAsync(options) is not null, "uncertain trace blocks new recording");
+        await service.StopAsync(save: false);
+        check(service.State == PrecisionTraceService.TraceState.CancelFailed, "failed cancel can be retried again");
+        failCancel = false;
+        await service.StopAsync(save: false);
+        check(service.State == PrecisionTraceService.TraceState.Idle && service.LastError is null, "successful retry clears failure");
     }
 
     private static void EventChecks(Action<bool, string> check)

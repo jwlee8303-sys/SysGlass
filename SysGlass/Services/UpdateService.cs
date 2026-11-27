@@ -324,7 +324,11 @@ public static class UpdateService
             if ($actual -ne $hash) { throw "해시 불일치: $name" }
             return ,$bytes
         }
-        try { Wait-Process -Id $ParentPid -Timeout 60 -ErrorAction SilentlyContinue } catch {}
+        Wait-Process -Id $ParentPid -Timeout 60 -ErrorAction SilentlyContinue
+        if (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+            Write-Log "기존 SysGlass가 종료되지 않아 업데이트를 중단합니다."
+            exit 1
+        }
         $backup = "$Target.old"
         $dir = Split-Path -Parent $Target
         $ok = $false

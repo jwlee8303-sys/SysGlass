@@ -17,6 +17,9 @@ public sealed class ProcessEventCollector : IDisposable
     private ManagementEventWatcher? _start, _stop;
     private int _sinceCollect;
     private long _lastCollectTicks;
+    private int _collectionQueued;
+    private int _lastGen1Count = GC.CollectionCount(1);
+    private int _eventsWithoutCollection;
 
     /// <summary>
     /// WMI 이벤트 객체는 Dispose해도 네이티브(COM) 메모리가 종료자(finalizer)가 돌 때까지 남는다(실측: 이벤트당 약 400KB).
@@ -98,8 +101,27 @@ public sealed class ProcessEventCollector : IDisposable
         long now = Environment.TickCount64, last = Interlocked.Read(ref _lastCollectTicks);
         if (now - last < (long)CollectMinInterval.TotalMilliseconds) return;
         if (Interlocked.CompareExchange(ref _lastCollectTicks, now, last) != last) return;
-        Interlocked.Exchange(ref _sinceCollect, 0);
-        GC.Collect(1, GCCollectionMode.Forced, blocking: true);
+        if (Interlocked.Exchange(ref _collectionQueued, 1) != 0) return;
+        int events = Interlocked.Exchange(ref _sinceCollect, 0);
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                // CLR이 이미 수집한 구간에는 추가 GC를 요청하지 않는다.
+                int current = GC.CollectionCount(1);
+                if (current != _lastGen1Count) _eventsWithoutCollection = 0;
+                else
+                {
+                    _eventsWithoutCollection += events;
+                    // 최적화 요청을 계속 건너뛰면 종료자를 기다리는 WMI 객체가 누적된다.
+                    var mode = _eventsWithoutCollection >= 4 * CollectEvery ? GCCollectionMode.Forced : GCCollectionMode.Optimized;
+                    GC.Collect(1, mode, blocking: false);
+                    if (GC.CollectionCount(1) != current) _eventsWithoutCollection = 0;
+                }
+                _lastGen1Count = GC.CollectionCount(1);
+            }
+            finally { Volatile.Write(ref _collectionQueued, 0); }
+        });
     }
 
     public void Dispose() => Stop();

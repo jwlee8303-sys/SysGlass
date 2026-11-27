@@ -43,7 +43,8 @@ public partial class PrecisionTraceWindow : Window
         bool idle = state == TraceState.Idle;
         TagsBox.IsEnabled = MinutesBox.IsEnabled = BufferBox.IsEnabled = ConsentBox.IsEnabled = idle;
         StartButton.IsEnabled = idle && ConsentBox.IsChecked == true && IsAvailable;
-        StopButton.IsEnabled = CancelButton.IsEnabled = state == TraceState.Recording;
+        StopButton.IsEnabled = state == TraceState.Recording;
+        CancelButton.IsEnabled = state is TraceState.Recording or TraceState.CancelFailed;
         if (state == TraceState.Recording) _tick.Start(); else _tick.Stop();
 
         StatusText.Foreground = System.Windows.Media.Brushes.White;
@@ -57,7 +58,7 @@ public partial class PrecisionTraceWindow : Window
             _ when _svc.LastPath is { } p => $"저장됨: {p}\nWPA(Windows Performance Analyzer)로 열어 'Memory → Pool' 그래프를 확인하세요.",
             _ => "동의 후 시작할 수 있습니다.",
         };
-        if (idle && _svc.LastError is not null) StatusText.Foreground = MemoryBrushes.For(MemoryLevel.Warn, 0);
+        if (_svc.LastError is not null) StatusText.Foreground = MemoryBrushes.For(MemoryLevel.Warn, 0);
     }
 
     private string Remaining()
