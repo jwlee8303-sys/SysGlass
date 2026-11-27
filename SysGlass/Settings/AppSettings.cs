@@ -18,11 +18,32 @@ public sealed class AppSettings
     public double BackgroundOpacity { get; set; } = 0.8;
     /// <summary>글자 크기 단계: 0=작게, 1=보통, 2=크게</summary>
     public int FontSizeLevel { get; set; } = 1;
+    /// <summary>오버레이 글자 색: TextColorPresets의 번호(0 = 흰색, 기본)</summary>
+    public int TextColor { get; set; }
+    /// <summary>
+    /// 글자 색 견본(#RRGGBB). 어두운 배경에서 잘 읽히는 밝은 색만 두고,
+    /// 온도 경고색(노랑·빨강)과 헷갈리는 색은 넣지 않는다.
+    /// SameLabel이면 항목 이름도 수치와 같은 색으로 표시한다(그 외에는 같은 계열의 어두운 색).
+    /// </summary>
+    public static readonly IReadOnlyList<(string Name, string Hex, bool SameLabel)> TextColorPresets =
+    [
+        ("흰색", "#F2F2F2", false), ("흰색(통일)", "#F2F2F2", true), ("하늘", "#8FD3FF", false), ("민트", "#8EF0C8", false),
+        ("라벤더", "#D4BFFF", false), ("연분홍", "#FFC2DA", false), ("연회색", "#BFC4CC", false),
+        ("회색(통일)", "#A9ADB4", true),
+    ];
     public double WindowWidth { get; set; } = 280;
     /// <summary>컴팩트 보기: 항목을 위젯형 칸으로 작게 표시한다.</summary>
     public bool CompactMode { get; set; }
-    /// <summary>컴팩트 보기 모양. 0 = 원형 링, 1 = 배터리 캡슐</summary>
-    public int CompactStyle { get; set; }
+    /// <summary>
+    /// 컴팩트 보기 모양. 1 = 배터리 캡슐, 2 = 추이 그래프, 3 = LED 미터, 4 = 아크 게이지.
+    /// 0(원형 링)은 제거되어 불러올 때 아크 게이지로 바꾼다.
+    /// </summary>
+    public int CompactStyle { get; set; } = ArcCompactStyle;
+    public const int MinCompactStyle = 1, MaxCompactStyle = 4, ArcCompactStyle = 4;
+    private const int RemovedRingStyle = 0;
+    /// <summary>아크 게이지 보기의 한 줄 칸 수(2~6).</summary>
+    public int ArcColumns { get; set; } = 3;
+    public const int MinArcColumns = 2, MaxArcColumns = 6;
 
     // ── 동작 ──
     public bool AlwaysOnTop { get; set; } = true;
@@ -135,7 +156,9 @@ public sealed class AppSettings
 
         BackgroundOpacity = Finite(BackgroundOpacity, 0.8, 0.2, 1.0);
         FontSizeLevel = Math.Clamp(FontSizeLevel, 0, 2);
-        CompactStyle = Math.Clamp(CompactStyle, 0, 1);
+        if (TextColor < 0 || TextColor >= TextColorPresets.Count) TextColor = 0;
+        CompactStyle = CompactStyle == RemovedRingStyle ? ArcCompactStyle : Math.Clamp(CompactStyle, MinCompactStyle, MaxCompactStyle);
+        ArcColumns = Math.Clamp(ArcColumns, MinArcColumns, MaxArcColumns);
         GroupOrder = NormalizeGroupOrder(GroupOrder);
         WindowWidth = Finite(WindowWidth, 280, MinWidth, MaxWidth);
         if (RefreshIntervalMs is not (500 or 1000 or 2000 or 5000)) RefreshIntervalMs = 1000;

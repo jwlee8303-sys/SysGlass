@@ -5,14 +5,33 @@ using SysGlass.Utilities;
 
 namespace SysGlass.ViewModels;
 
-/// <summary>온도 값에 따른 표시 색상. 참고용이며 안전 여부를 단정하지 않는다.</summary>
+/// <summary>
+/// 오버레이 글자 색과 온도 값에 따른 표시 색상. 온도 색은 참고용이며 안전 여부를 단정하지 않는다.
+/// Normal(본문·수치)과 Label(항목 이름)은 설정의 글자 색을 따르고, 경고색(Warn·High)은 바꾸지 않는다.
+/// </summary>
 internal static class TempBrushes
 {
-    public static readonly Brush Normal = Freeze(Color.FromRgb(0xF2, 0xF2, 0xF2));
+    /// <summary>본문·수치 글자 색(설정의 글자 색).</summary>
+    public static Brush Normal { get; private set; } = Freeze(Color.FromRgb(0xF2, 0xF2, 0xF2));
+    /// <summary>
+    /// 항목 이름 글자 색. 본문 색을 65% 밝기로 낮춘 같은 계열의 색(흰색이면 기존 회색 #9DA0A6에 가까움).
+    /// '회색(통일)' 견본은 본문과 같은 색을 쓴다.
+    /// </summary>
+    public static Brush Label { get; private set; } = Freeze(Color.FromRgb(0x9D, 0x9D, 0x9D));
     public static readonly Brush Warn = Freeze(Color.FromRgb(0xFF, 0xD2, 0x4D));
     public static readonly Brush High = Freeze(Color.FromRgb(0xFF, 0x5C, 0x5C));
 
     private static Brush Freeze(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
+    /// <summary>설정의 글자 색 번호를 적용한다. 범위를 벗어나면 흰색을 쓴다.</summary>
+    public static void ApplyTextColor(int preset)
+    {
+        var presets = AppSettings.TextColorPresets;
+        var p = presets[preset >= 0 && preset < presets.Count ? preset : 0];
+        var c = (Color)ColorConverter.ConvertFromString(p.Hex);
+        Normal = Freeze(c);
+        Label = p.SameLabel ? Normal : Freeze(Color.FromRgb((byte)(c.R * 0.65), (byte)(c.G * 0.65), (byte)(c.B * 0.65)));
+    }
 
     /// <summary>센서값이 없으면(N/A) 경고 색상을 적용하지 않는다.</summary>
     public static Brush For(double? t, double warn, double high) =>
@@ -37,9 +56,12 @@ public sealed class GpuItemViewModel : ViewModelBase
     public double Usage { get => _usage; private set => Set(ref _usage, value); }
     public double VramPercent { get => _vramPercent; private set => Set(ref _vramPercent, value); }
     public Brush TempBrush { get => _tempBrush; private set => Set(ref _tempBrush, value); }
+    /// <summary>VRAM 사용량(MB). 센서가 없으면 null.</summary>
+    public double? VramUsedMb { get; private set; }
 
     public void Update(GpuInfo g)
     {
+        VramUsedMb = g.VramUsedMb;
         Name = g.Name;
         UsageText = Format.Percent(g.UsagePercent);
         Usage = g.UsagePercent ?? 0;
@@ -108,9 +130,16 @@ public sealed class CompactTileViewModel : ViewModelBase
     public bool HasSub => _subText.Length > 0;
     public string ToolTip { get => _toolTip; private set => Set(ref _toolTip, value); }
 
+    /// <summary>추이 그래프에 쓰는 최근 표본 수(갱신 주기 1초면 약 1분).</summary>
+    public const int HistoryLength = 60;
+    private IReadOnlyList<double>? _history;
+    /// <summary>최근 게이지 값(오래된 것부터). 갱신마다 새 배열로 바꿔 그래프를 다시 그리게 한다.</summary>
+    public IReadOnlyList<double>? History { get => _history; private set => Set(ref _history, value); }
+
     public void Update(string label, string valueText, Brush valueBrush, double percent, Brush accent,
-        string subText, Brush subBrush, string toolTip)
+        string subText, Brush subBrush, string toolTip, IReadOnlyList<double> history)
     {
+        History = history;
         Label = label;
         ValueText = valueText;
         ValueBrush = valueBrush;

@@ -12,12 +12,15 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="CanResizeWithGrip" ShowInTaskbar="True"
         FontFamily="Segoe UI Variable Text, Segoe UI, Malgun Gothic" FontSize="{DynamicResource FsBase}"
-        Foreground="#F2F2F2" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+        Foreground="{DynamicResource TextBrush}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
     <Window.Resources>
         <!-- 글자 크기 단계에 따라 코드에서 갱신되는 크기 리소스 -->
         <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="FsBase">13</sys:Double>
         <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="FsLabel">11</sys:Double>
         <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="FsLarge">16</sys:Double>
+        <!-- 설정의 글자 색에 따라 코드에서 갱신되는 색 리소스(본문·수치, 항목 이름) -->
+        <SolidColorBrush x:Key="TextBrush" Color="#F2F2F2"/>
+        <SolidColorBrush x:Key="LabelBrush" Color="#9D9D9D"/>
 
         <Style x:Key="TitleButton" TargetType="Button">
             <Setter Property="Width" Value="24"/>
@@ -64,7 +67,7 @@
         </Style>
 
         <Style x:Key="Label" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#9DA0A6"/>
+            <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
             <Setter Property="FontSize" Value="{DynamicResource FsLabel}"/>
         </Style>
         <!-- 구역 아래 여백. 컴팩트 보기에서는 간격을 줄인다 -->
@@ -76,21 +79,6 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <!-- 컴팩트 보기: 워치 위젯형 원형 링 칸 -->
-        <DataTemplate x:Key="RingTile">
-            <StackPanel Margin="2,0,2,8" ToolTip="{Binding ToolTip}" Background="Transparent">
-                <Grid Width="56" Height="56" HorizontalAlignment="Center">
-                    <views:UsageGauge Kind="Ring" Thickness="5" Value="{Binding Percent}" Fill="{Binding Accent}"/>
-                    <TextBlock Text="{Binding ValueText}" Foreground="{Binding ValueBrush}" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Grid>
-                <TextBlock Text="{Binding Label}" Style="{StaticResource Label}" HorizontalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
-                <TextBlock Text="{Binding SubText}" Foreground="{Binding SubBrush}" FontSize="{DynamicResource FsLabel}"
-                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"
-                           Visibility="{Binding HasSub, Converter={StaticResource BoolToVis}}"/>
-            </StackPanel>
-        </DataTemplate>
         <!-- 컴팩트 보기: 배터리 위젯형 캡슐 칸 -->
         <DataTemplate x:Key="CapsuleTile">
             <StackPanel Margin="3,0,3,8" ToolTip="{Binding ToolTip}" Background="Transparent">
@@ -107,7 +95,68 @@
                            Visibility="{Binding HasSub, Converter={StaticResource BoolToVis}}"/>
             </StackPanel>
         </DataTemplate>
-        <ItemsPanelTemplate x:Key="ThreeColumns"><UniformGrid Columns="3"/></ItemsPanelTemplate>
+        <!-- 추이 그래프: 이름·값 아래에 최근 사용률 변화를 면 그래프로 표시 -->
+        <DataTemplate x:Key="GraphTile">
+            <StackPanel Margin="3,0,3,8" ToolTip="{Binding ToolTip}" Background="Transparent">
+                <DockPanel>
+                    <TextBlock Text="{Binding ValueText}" Foreground="{Binding ValueBrush}" FontWeight="SemiBold" DockPanel.Dock="Right"/>
+                    <TextBlock Text="{Binding Label}" Style="{StaticResource Label}" VerticalAlignment="Bottom" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+                <views:UsageGauge Kind="History" Height="28" Margin="0,3,0,0" Value="{Binding Percent}" Fill="{Binding Accent}"
+                                  History="{Binding History}" HistoryLength="{x:Static vm:CompactTileViewModel.HistoryLength}"/>
+                <TextBlock Text="{Binding SubText}" Foreground="{Binding SubBrush}" FontSize="{DynamicResource FsLabel}"
+                           Margin="0,2,0,0" TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding HasSub, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </DataTemplate>
+        <!-- LED 미터: 한 줄에 한 항목, 레벨미터처럼 칸이 켜짐. 이름·값 열 너비를 항목끼리 맞춘다 -->
+        <DataTemplate x:Key="LedTile">
+            <!-- 목록의 왼쪽 -2 여백을 상쇄해 이름 첫 글자가 잘리지 않게 한다 -->
+            <Grid Margin="3,0,3,6" ToolTip="{Binding ToolTip}" Background="Transparent">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="LedLabel"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="LedValue"/>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="LedSub"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Label}" Style="{StaticResource Label}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <views:UsageGauge Grid.Column="1" Kind="Segments" SegmentCount="20" Height="10" VerticalAlignment="Center"
+                                  Value="{Binding Percent}" Fill="{Binding Accent}"/>
+                <TextBlock Grid.Column="2" Text="{Binding ValueText}" Foreground="{Binding ValueBrush}" FontWeight="SemiBold"
+                           TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                <TextBlock Grid.Column="3" Text="{Binding SubText}" Foreground="{Binding SubBrush}" FontSize="{DynamicResource FsLabel}"
+                           VerticalAlignment="Center" Margin="6,0,0,0"
+                           Visibility="{Binding HasSub, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </DataTemplate>
+        <!-- 아크 게이지: 계기판형 270° 호 가운데에 값, 아래에 이름 표시.
+             크기는 열 수(2·3·4열)에 따라 정하고, 칸이 그보다 좁으면 Viewbox로 줄인다.
+             가운데 값은 호 안쪽 폭을 넘으면 글자를 줄여 호에 닿지 않게 한다 -->
+        <DataTemplate x:Key="ArcTile">
+            <StackPanel Margin="2,0,2,8" ToolTip="{Binding ToolTip}" Background="Transparent">
+                <Viewbox StretchDirection="DownOnly" HorizontalAlignment="Center"
+                         MaxWidth="{Binding DataContext.ArcTileSize, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <Grid Width="{Binding DataContext.ArcTileSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                          Height="{Binding DataContext.ArcTileSize, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <views:UsageGauge Kind="Arc" Thickness="5" Value="{Binding Percent}" Fill="{Binding Accent}"/>
+                        <Viewbox StretchDirection="DownOnly" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 MaxWidth="{Binding DataContext.ArcValueWidth, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <TextBlock Text="{Binding ValueText}" Foreground="{Binding ValueBrush}" FontWeight="SemiBold"/>
+                        </Viewbox>
+                    </Grid>
+                </Viewbox>
+                <!-- 호 아래 트인 공간만큼 끌어올린다(호 끝보다는 아래라 겹치지 않음) -->
+                <TextBlock Text="{Binding Label}" Style="{StaticResource Label}" HorizontalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="0,-6,0,0"/>
+                <TextBlock Text="{Binding SubText}" Foreground="{Binding SubBrush}" FontSize="{DynamicResource FsLabel}"
+                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
+                           Visibility="{Binding HasSub, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </DataTemplate>
+        <ItemsPanelTemplate x:Key="OneColumn"><StackPanel/></ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="ArcColumns">
+            <UniformGrid Columns="{Binding DataContext.ArcColumns, RelativeSource={RelativeSource AncestorType=Window}}"/>
+        </ItemsPanelTemplate>
         <ItemsPanelTemplate x:Key="TwoColumns"><UniformGrid Columns="2"/></ItemsPanelTemplate>
 
         <DrawingImage x:Key="TaskManagerFallbackIcon">
@@ -182,15 +231,25 @@
 
                     <!-- 컴팩트 보기: 위젯형 칸 -->
                     <ItemsControl x:Name="CompactTilesPanel" ItemsSource="{Binding CompactTiles}" Margin="-2,0,-2,2" Focusable="False"
+                                  Grid.IsSharedSizeScope="True"
                                   Visibility="{Binding CompactMode, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.Style>
                             <Style TargetType="ItemsControl">
-                                <Setter Property="ItemTemplate" Value="{StaticResource RingTile}"/>
-                                <Setter Property="ItemsPanel" Value="{StaticResource ThreeColumns}"/>
+                                <!-- 기본값: 아크 게이지(4). 1~3은 아래 트리거로 바꾼다 -->
+                                <Setter Property="ItemTemplate" Value="{StaticResource ArcTile}"/>
+                                <Setter Property="ItemsPanel" Value="{StaticResource ArcColumns}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding CompactStyle}" Value="1">
                                         <Setter Property="ItemTemplate" Value="{StaticResource CapsuleTile}"/>
                                         <Setter Property="ItemsPanel" Value="{StaticResource TwoColumns}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding CompactStyle}" Value="2">
+                                        <Setter Property="ItemTemplate" Value="{StaticResource GraphTile}"/>
+                                        <Setter Property="ItemsPanel" Value="{StaticResource TwoColumns}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding CompactStyle}" Value="3">
+                                        <Setter Property="ItemTemplate" Value="{StaticResource LedTile}"/>
+                                        <Setter Property="ItemsPanel" Value="{StaticResource OneColumn}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -253,12 +312,12 @@
                         <DockPanel Margin="0,2,0,0" ToolTip="{Binding UptimeTip}"
                                    Visibility="{Binding DataContext.ShowUptime, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="Uptime" Style="{StaticResource Label}" VerticalAlignment="Bottom"/>
-                            <TextBlock Text="{Binding UptimeText}" HorizontalAlignment="Right"/>
+                            <TextBlock Text="{Binding UptimeText}" Foreground="{Binding UptimeBrush}" HorizontalAlignment="Right"/>
                         </DockPanel>
                         <DockPanel Margin="0,2,0,0" ToolTip="{Binding StatusTip}"
                                    Visibility="{Binding DataContext.ShowMemoryStatus, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="Memory Status" Style="{StaticResource Label}" VerticalAlignment="Bottom"/>
-                            <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}"
                                        HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
                         </DockPanel>
                     </StackPanel>
@@ -277,7 +336,7 @@
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                             <TextBlock Text="{Binding UsageText}" FontWeight="SemiBold"
                                                        Visibility="{Binding DataContext.ShowGpuUsage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
-                                            <TextBlock Text=" / " Foreground="#9DA0A6"
+                                            <TextBlock Text=" / " Foreground="{DynamicResource LabelBrush}"
                                                        Visibility="{Binding DataContext.ShowGpuBoth, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                             <TextBlock Text="{Binding TempText}" Foreground="{Binding TempBrush}"
                                                        Visibility="{Binding DataContext.ShowGpuTemp, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
@@ -311,7 +370,7 @@
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                             <TextBlock Text="{Binding UsageText}"
                                                        Visibility="{Binding DataContext.ShowDiskUsage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
-                                            <TextBlock Text=" / " Foreground="#9DA0A6"
+                                            <TextBlock Text=" / " Foreground="{DynamicResource LabelBrush}"
                                                        Visibility="{Binding DataContext.ShowDiskBoth, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                                             <TextBlock Text="{Binding TempText}" Foreground="{Binding TempBrush}"
                                                        Visibility="{Binding DataContext.ShowDiskTemp, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
@@ -331,10 +390,10 @@
                     <DockPanel x:Name="GroupNet" Margin="0,0,0,8" Visibility="{Binding ShowNetwork, Converter={StaticResource BoolToVis}}">
                         <TextBlock Text="NET" Style="{StaticResource Label}"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <TextBlock Text="↓ " Foreground="#9DA0A6" Visibility="{Binding ShowNetDown, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="↓ " Foreground="{DynamicResource LabelBrush}" Visibility="{Binding ShowNetDown, Converter={StaticResource BoolToVis}}"/>
                             <TextBlock Text="{Binding NetDownText}" Visibility="{Binding ShowNetDown, Converter={StaticResource BoolToVis}}"/>
                             <TextBlock Text="   " Visibility="{Binding ShowNetBoth, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="↑ " Foreground="#9DA0A6" Visibility="{Binding ShowNetUp, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="↑ " Foreground="{DynamicResource LabelBrush}" Visibility="{Binding ShowNetUp, Converter={StaticResource BoolToVis}}"/>
                             <TextBlock Text="{Binding NetUpText}" Visibility="{Binding ShowNetUp, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
                     </DockPanel>

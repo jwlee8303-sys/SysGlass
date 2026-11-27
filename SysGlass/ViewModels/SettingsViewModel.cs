@@ -219,9 +219,46 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         set => Put(_s.BackgroundOpacity, Math.Clamp(Math.Round(value) / 100.0, 0.2, 1.0), v => _s.BackgroundOpacity = v);
     }
 
-    public bool CompactMode { get => _s.CompactMode; set => Put(_s.CompactMode, value, v => _s.CompactMode = v); }
-    public int CompactStyle { get => _s.CompactStyle; set => Put(_s.CompactStyle, Math.Clamp(value, 0, 1), v => _s.CompactStyle = v); }
+    /// <summary>
+    /// 화면 표시 방법. 0 = 기본 보기, 1 = 배터리 캡슐, 2 = 추이 그래프, 3 = LED 미터, 4 = 아크 게이지.
+    /// 저장 형식(CompactMode·CompactStyle)은 기존 설정 파일과의 호환을 위해 그대로 사용하며, 1~4는 CompactStyle 값과 같다.
+    /// </summary>
+    public int DisplayMode
+    {
+        get => _s.CompactMode ? Math.Clamp(_s.CompactStyle, AppSettings.MinCompactStyle, AppSettings.MaxCompactStyle) : 0;
+        set
+        {
+            value = Math.Clamp(value, 0, AppSettings.MaxCompactStyle);
+            if (value == DisplayMode) return;
+            _s.CompactMode = value != 0;
+            if (value != 0) _s.CompactStyle = value;
+            Raise();
+            Raise(nameof(IsArcDisplay));
+            _main.NotifySettingsChanged(nameof(DisplayMode));
+        }
+    }
+    /// <summary>아크 게이지를 고른 상태인지(열 수 선택 표시용).</summary>
+    public bool IsArcDisplay => DisplayMode == AppSettings.ArcCompactStyle;
+
+    /// <summary>아크 게이지 보기의 한 줄 칸 수(2~6).</summary>
+    public int ArcColumns
+    {
+        get => _s.ArcColumns;
+        set => PutInt(_s.ArcColumns, value, AppSettings.MinArcColumns, AppSettings.MaxArcColumns, v => _s.ArcColumns = v);
+    }
+
     public int FontSizeLevel { get => _s.FontSizeLevel; set => Put(_s.FontSizeLevel, Math.Clamp(value, 0, 2), v => _s.FontSizeLevel = v); }
+
+    /// <summary>오버레이 글자 색(견본 번호).</summary>
+    public int TextColor
+    {
+        get => _s.TextColor;
+        set => PutInt(_s.TextColor, value, 0, AppSettings.TextColorPresets.Count - 1, v => _s.TextColor = v);
+    }
+
+    /// <summary>설정 화면의 글자 색 견본 목록.</summary>
+    public IReadOnlyList<TextColorOption> TextColorOptions { get; } =
+        AppSettings.TextColorPresets.Select((p, i) => new TextColorOption(i, p.Name, p.Hex)).ToList();
 
     public double WindowWidth
     {
@@ -293,6 +330,9 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         _controller.ControllerStateChanged -= OnControllerChanged;
     }
 }
+
+/// <summary>설정 창의 글자 색 견본 하나.</summary>
+public sealed record TextColorOption(int Index, string Name, string Hex);
 
 /// <summary>설정 창의 그룹 순서 목록 한 줄.</summary>
 public sealed record GroupOrderItem(string Key, string Title);

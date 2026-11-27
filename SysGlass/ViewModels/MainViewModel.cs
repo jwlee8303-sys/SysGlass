@@ -41,6 +41,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     {
         _monitor = monitor;
         _settings = settings;
+        TempBrushes.ApplyTextColor(settings.TextColor);
         MemoryService = new MemoryWatchService(settings);
         Trace = new PrecisionTraceService(Path.Combine(MemoryService.LogDirectory, "trace"));
         MemoryService.Updated += state =>
@@ -94,11 +95,20 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     public bool ShowDiskBoth => ShowDiskUsage && ShowDiskTemp;
     public bool ShowDiskSection => ShowDiskUsage || ShowDiskTemp || ShowDiskIo;
 
-    // ── 컴팩트 보기: 위젯형 칸(원형 링 또는 배터리 캡슐)으로 표시 ──
+    // ── 컴팩트 보기: 위젯형 칸(배터리 캡슐·추이 그래프·LED 미터·아크 게이지)으로 표시 ──
     public bool CompactMode => _settings.CompactMode;
     public bool ShowNormalView => !CompactMode;
-    /// <summary>0 = 원형 링, 1 = 배터리 캡슐</summary>
+    /// <summary>1 = 배터리 캡슐, 2 = 추이 그래프, 3 = LED 미터, 4 = 아크 게이지</summary>
     public int CompactStyle => _settings.CompactStyle;
+    /// <summary>아크 게이지 보기의 한 줄 칸 수(2~6).</summary>
+    public int ArcColumns => _settings.ArcColumns;
+    /// <summary>아크 게이지 한 칸의 기본 크기(px). 칸이 적을수록 크게 그린다. 창이 좁으면 XAML에서 더 줄인다.</summary>
+    public double ArcTileSize => _settings.ArcColumns switch { 2 => 80, 4 => 52, 5 => 44, 6 => 38, _ => 62 };
+    /// <summary>
+    /// 아크 게이지 가운데 값이 차지할 수 있는 최대 폭. 호 안쪽 지름(크기 − 두께·눈금 자리 16px)의 80%로,
+    /// 작은 게이지에서도 글자가 호에 닿지 않게 한다.
+    /// </summary>
+    public double ArcValueWidth => Math.Max(10, (ArcTileSize - 16) * 0.8);
     public ObservableCollection<CompactTileViewModel> CompactTiles { get; } = [];
 
     public bool HasAnything => ShowCpuBlock || ShowRamUsage || ShowGpuSection || ShowDiskSection || ShowNetwork || ShowKernelMemory;
@@ -147,6 +157,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     public void NotifySettingsChanged(string name)
     {
         BackgroundBrush = BuildBrush(_settings.BackgroundOpacity);
+        TempBrushes.ApplyTextColor(_settings.TextColor); // 아래 Apply에서 수치 색을 바로 다시 고른다.
         Raise(string.Empty); // 모든 속성 갱신
         if (_lastSnapshot is { } s) Apply(s, _lastOptions);
         Memory.Refresh(_settings.MemColorScheme);
@@ -291,9 +302,11 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     /// 컴팩트 보기의 칸 목록을 맞춘다. 사용률을 끈 항목은 온도를 주 값으로 보여 주고 게이지는 비운다.
     /// 클럭·전력·디스크 I/O는 컴팩트 보기에서 툴팁으로만 제공한다.
     /// </summary>
+    private readonly Dictionary<string, Queue<double>> _tileHistory = [];
+
     private void UpdateCompactTiles(SystemSnapshot s)
     {
-        if (!CompactMode) { CompactTiles.Clear(); return; }
+        if (!CompactMode) { CompactTiles.Clear(); _tileHistory.Clear(); return; }
         var normal = TempBrushes.Normal;
         var tiles = new List<TileData>();
 
@@ -322,8 +335,14 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                     ? new("gpu:" + g.Id, label, g.UsageText, normal, g.Usage, GpuAccent, ShowGpuTemp ? g.TempText : "", g.TempBrush, g.Name)
                     : new("gpu:" + g.Id, label, g.TempText, g.TempBrush, 0, GpuAccent, "", normal, g.Name));
             if (ShowVram)
+            {
+                // 모든 보기에서 사용 중인 VRAM 용량(GB)을 보조 값으로 함께 보여 준다.
+                string vramSub = g.VramUsedMb is { } mb
+                    ? string.Format(CultureInfo.InvariantCulture, "{0:0.0} GB", mb / 1024)
+                    : "";
                 tiles.Add(new("vram:" + g.Id, Gpus.Count > 1 ? $"VRAM {i}" : "VRAM", Format.Percent(g.VramPercent), normal,
-                    g.VramPercent, VramAccent, "", normal, $"{g.Name}\n{g.VramText}"));
+                    g.VramPercent, VramAccent, vramSub, normal, $"{g.Name}\n{g.VramText}"));
+            }
         }
 
         foreach (var d in Disks)
@@ -348,10 +367,17 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             CompactTiles.Clear();
             foreach (var t in tiles) CompactTiles.Add(new CompactTileViewModel(t.Id));
         }
+        // 추이 그래프용 기록. 칸을 다시 만들어도 유지되도록 Id별로 따로 보관하고, 사라진 칸의 기록은 버린다.
+        foreach (var gone in _tileHistory.Keys.Where(k => !tiles.Any(t => t.Id == k)).ToList())
+            _tileHistory.Remove(gone);
         for (int i = 0; i < tiles.Count; i++)
         {
             var t = tiles[i];
-            CompactTiles[i].Update(t.Label, t.ValueText, t.ValueBrush, t.Percent, t.Accent, t.SubText, t.SubBrush, t.ToolTip);
+            if (!_tileHistory.TryGetValue(t.Id, out var hist)) _tileHistory[t.Id] = hist = [];
+            hist.Enqueue(double.IsFinite(t.Percent) ? t.Percent : 0);
+            while (hist.Count > CompactTileViewModel.HistoryLength) hist.Dequeue();
+            CompactTiles[i].Update(t.Label, t.ValueText, t.ValueBrush, t.Percent, t.Accent, t.SubText, t.SubBrush, t.ToolTip,
+                hist.ToArray());
         }
     }
 

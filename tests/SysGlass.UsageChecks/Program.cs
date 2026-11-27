@@ -12,6 +12,7 @@ try
     MemoryChecks.Run(Check);
     MemoryDiagnosticChecks.Run(scratch, Check);
     UpdateChecks.Run(Check);
+    DisplayChecks.Run(Check);
 }
 finally { Directory.Delete(scratch, recursive: true); }
 

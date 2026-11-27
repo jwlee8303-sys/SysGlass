@@ -178,7 +178,7 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="▲▼ 버튼이나 마우스로 끌어서 오버레이의 그룹 순서를 바꿉니다. 컴팩트 보기에도 같은 순서가 적용됩니다."
+                        <TextBlock Text="▲▼ 버튼이나 마우스로 끌어서 오버레이의 그룹 순서를 바꿉니다. 다른 화면 표시 방법에도 같은 순서가 적용됩니다."
                                    Style="{StaticResource Hint}"/>
                         <TextBlock Text="CPU" Style="{StaticResource SubTitle}"/>
                         <CheckBox Content="CPU 사용률" IsChecked="{Binding ShowCpuUsage}"/>
@@ -277,13 +277,59 @@
                             <RadioButton Content="크게" GroupName="Font" IsChecked="{Binding FontSizeLevel, Converter={StaticResource EqualsConv}, ConverterParameter=2}"/>
                         </StackPanel>
 
-                        <CheckBox Content="컴팩트 보기" IsChecked="{Binding CompactMode}" Margin="0,12,0,0"/>
-                        <StackPanel Orientation="Horizontal" Margin="20,4,0,0" IsEnabled="{Binding CompactMode}">
-                            <RadioButton Content="원형 링" GroupName="CompactStyle" IsChecked="{Binding CompactStyle, Converter={StaticResource EqualsConv}, ConverterParameter=0}"/>
-                            <RadioButton Content="배터리 캡슐" GroupName="CompactStyle" IsChecked="{Binding CompactStyle, Converter={StaticResource EqualsConv}, ConverterParameter=1}"/>
+                        <TextBlock Text="글자 색" Style="{StaticResource SubTitle}" Margin="0,12,0,4"/>
+                        <!-- 색 견본: 고른 색에 흰 테두리를 두르고, 마우스를 올리면 색 이름을 보여 준다 -->
+                        <ListBox ItemsSource="{Binding TextColorOptions}" SelectedIndex="{Binding TextColor}"
+                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" KeyboardNavigation.DirectionalNavigation="Cycle">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="ToolTip" Value="{Binding Name}"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Margin" Value="0,0,8,0"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="ring" Width="26" Height="26" CornerRadius="13" BorderThickness="2"
+                                                        BorderBrush="Transparent" Background="Transparent">
+                                                    <Ellipse Width="18" Height="18" Fill="{Binding Hex}" Stroke="#4A4D55" StrokeThickness="1"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ring" Property="BorderBrush" Value="#6A6D75"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="ring" Property="BorderBrush" Value="#F2F2F2"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+                        <TextBlock Text="수치와 항목 이름의 색을 바꿉니다. 온도 경고 색(노랑·빨강)은 그대로 유지됩니다." Style="{StaticResource Hint}" Margin="0,4,0,0"/>
+
+                        <TextBlock Text="화면 표시 방법" Style="{StaticResource SubTitle}" Margin="0,12,0,4"/>
+                        <UniformGrid Columns="3">
+                            <RadioButton Content="기본 보기" GroupName="DisplayMode" IsChecked="{Binding DisplayMode, Converter={StaticResource EqualsConv}, ConverterParameter=0}"/>
+                            <RadioButton Content="배터리 캡슐" GroupName="DisplayMode" IsChecked="{Binding DisplayMode, Converter={StaticResource EqualsConv}, ConverterParameter=1}"/>
+                            <RadioButton Content="추이 그래프" GroupName="DisplayMode" IsChecked="{Binding DisplayMode, Converter={StaticResource EqualsConv}, ConverterParameter=2}"/>
+                            <RadioButton Content="LED 미터" GroupName="DisplayMode" IsChecked="{Binding DisplayMode, Converter={StaticResource EqualsConv}, ConverterParameter=3}"/>
+                            <RadioButton Content="아크 게이지" GroupName="DisplayMode" IsChecked="{Binding DisplayMode, Converter={StaticResource EqualsConv}, ConverterParameter=4}"/>
+                        </UniformGrid>
+                        <StackPanel Orientation="Horizontal" Margin="20,6,0,0"
+                                    Visibility="{Binding IsArcDisplay, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="열 수" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <RadioButton Content="2열" GroupName="ArcColumns" IsChecked="{Binding ArcColumns, Converter={StaticResource EqualsConv}, ConverterParameter=2}"/>
+                            <RadioButton Content="3열" GroupName="ArcColumns" IsChecked="{Binding ArcColumns, Converter={StaticResource EqualsConv}, ConverterParameter=3}"/>
+                            <RadioButton Content="4열" GroupName="ArcColumns" IsChecked="{Binding ArcColumns, Converter={StaticResource EqualsConv}, ConverterParameter=4}"/>
+                            <RadioButton Content="5열" GroupName="ArcColumns" IsChecked="{Binding ArcColumns, Converter={StaticResource EqualsConv}, ConverterParameter=5}"/>
+                            <RadioButton Content="6열" GroupName="ArcColumns" IsChecked="{Binding ArcColumns, Converter={StaticResource EqualsConv}, ConverterParameter=6}"/>
                         </StackPanel>
-                        <TextBlock Text="CPU·RAM·GPU·VRAM·디스크를 워치 위젯 같은 원형 링(한 줄에 3개) 또는 배터리 위젯 같은 캡슐(한 줄에 2개)로 작게 보여 줍니다. 클럭·전력·디스크 I/O는 항목에 마우스를 올리면 표시됩니다."
-                                   Style="{StaticResource Hint}"/>
 
                         <DockPanel Margin="0,12,0,0">
                             <TextBlock Text="{Binding WindowWidth, StringFormat={}{0:0} px}" DockPanel.Dock="Right" Width="64" TextAlignment="Right"/>

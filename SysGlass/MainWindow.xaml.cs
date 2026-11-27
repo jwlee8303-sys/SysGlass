@@ -46,6 +46,7 @@ namespace SysGlass
 
             InitializeComponent();
             ApplyFontResources();
+            ApplyTextColorResources();
             ApplyGroupOrder();
 
             Topmost = _settings.AlwaysOnTop;
@@ -189,6 +190,7 @@ namespace SysGlass
         private void OnSettingChanged(string name)
         {
             if (name is nameof(AppSettings.FontSizeLevel) or "Reset") ApplyFontResources();
+            if (name is nameof(AppSettings.TextColor) or "Reset") ApplyTextColorResources();
             if (name is nameof(AppSettings.GroupOrder) or "Reset") ApplyGroupOrder();
             if (name is nameof(AppSettings.WindowWidth) or "Reset")
             {
@@ -235,6 +237,13 @@ namespace SysGlass
             Resources["FsBase"] = Math.Round(13 * s * 2) / 2;
             Resources["FsLabel"] = Math.Round(11 * s * 2) / 2;
             Resources["FsLarge"] = Math.Round(16 * s * 2) / 2;
+        }
+
+        /// <summary>설정의 글자 색을 본문(TextBrush)과 항목 이름(LabelBrush) 리소스에 반영한다.</summary>
+        private void ApplyTextColorResources()
+        {
+            Resources["TextBrush"] = TempBrushes.Normal;
+            Resources["LabelBrush"] = TempBrushes.Label;
         }
 
         // ───────── IMainWindowController ─────────

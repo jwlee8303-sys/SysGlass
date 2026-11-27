@@ -4,11 +4,14 @@ using SysGlass.Utilities;
 
 namespace SysGlass.ViewModels;
 
-/// <summary>메모리 상태 색상. 0=기본(노랑/빨강), 1=고대비(주황/자홍). 측정 불가는 회색으로 정상과 구분한다.</summary>
+/// <summary>
+/// 메모리 상태 색상. 0=기본(노랑/빨강), 1=고대비(주황/자홍).
+/// 정상은 본문 글자 색, 측정 불가는 항목 이름 색을 따라 다른 그룹과 같은 글자 색 체계를 쓴다.
+/// </summary>
 internal static class MemoryBrushes
 {
-    public static readonly Brush Normal = TempBrushes.Normal;
-    public static readonly Brush Unknown = Freeze(Color.FromRgb(0x9D, 0xA0, 0xA6));
+    public static Brush Normal => TempBrushes.Normal;
+    public static Brush Unknown => TempBrushes.Label;
     private static readonly Brush[] Warn = [TempBrushes.Warn, Freeze(Color.FromRgb(0xFF, 0x9F, 0x1C))];
     private static readonly Brush[] High = [TempBrushes.High, Freeze(Color.FromRgb(0xFF, 0x4F, 0xD8))];
 
@@ -34,7 +37,7 @@ public sealed class MemoryOverlayViewModel : ViewModelBase
     private string _growthText = Format.NA, _growthTip = "", _uptimeText = Format.NA, _uptimeTip = "";
     private string _statusText = MemoryLevelText.Of(MemoryLevel.Unknown), _statusTip = "";
     private Brush _pagedBrush = MemoryBrushes.Normal, _nonPagedBrush = MemoryBrushes.Normal,
-        _growthBrush = MemoryBrushes.Normal, _statusBrush = MemoryBrushes.Unknown;
+        _growthBrush = MemoryBrushes.Normal, _uptimeBrush = MemoryBrushes.Normal, _statusBrush = MemoryBrushes.Unknown;
 
     public string PagedPoolText { get => _pagedText; private set => Set(ref _pagedText, value); }
     public string PagedPoolTip { get => _pagedTip; private set => Set(ref _pagedTip, value); }
@@ -47,6 +50,8 @@ public sealed class MemoryOverlayViewModel : ViewModelBase
     public Brush PoolGrowthBrush { get => _growthBrush; private set => Set(ref _growthBrush, value); }
     public string UptimeText { get => _uptimeText; private set => Set(ref _uptimeText, value); }
     public string UptimeTip { get => _uptimeTip; private set => Set(ref _uptimeTip, value); }
+    /// <summary>가동 시간 색. 판정 대상이 아니므로 정상은 본문 색, 감시 꺼짐은 다른 항목과 같은 흐린 색.</summary>
+    public Brush UptimeBrush { get => _uptimeBrush; private set => Set(ref _uptimeBrush, value); }
     public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
     public string StatusTip { get => _statusTip; private set => Set(ref _statusTip, value); }
     public Brush StatusBrush { get => _statusBrush; private set => Set(ref _statusBrush, value); }
@@ -64,7 +69,7 @@ public sealed class MemoryOverlayViewModel : ViewModelBase
             const string off = "감시 꺼짐";
             PagedPoolText = NonPagedPoolText = PoolGrowthText = UptimeText = StatusText = off;
             PagedPoolTip = NonPagedPoolTip = PoolGrowthTip = UptimeTip = StatusTip = "설정에서 메모리 감시를 켜면 표시됩니다.";
-            PagedPoolBrush = NonPagedPoolBrush = PoolGrowthBrush = StatusBrush = MemoryBrushes.Unknown;
+            PagedPoolBrush = NonPagedPoolBrush = PoolGrowthBrush = UptimeBrush = StatusBrush = MemoryBrushes.Unknown;
             return;
         }
 
@@ -89,6 +94,7 @@ public sealed class MemoryOverlayViewModel : ViewModelBase
         PoolGrowthBrush = BrushOf("growth");
 
         UptimeText = Format.Duration(s.Uptime);
+        UptimeBrush = MemoryBrushes.Normal;
         UptimeTip = s.BootTime is { } boot
             ? $"커널 시작: {boot:yyyy-MM-dd HH:mm} (절전 시간 포함)\n빠른 시작이 켜져 있으면 시스템 종료 후에도 이어집니다."
             : "";
