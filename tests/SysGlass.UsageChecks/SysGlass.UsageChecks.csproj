@@ -25,5 +25,6 @@
     <Compile Include="../../SysGlass/Services/Memory/ProcessEventStats.cs" Link="Memory/ProcessEventStats.cs" />
     <Compile Include="../../SysGlass/Services/Memory/DriverTagSearch.cs" Link="Memory/DriverTagSearch.cs" />
     <Compile Include="../../SysGlass/Services/Memory/PrecisionTraceService.cs" Link="Memory/PrecisionTraceService.cs" />
+    <Compile Include="../../SysGlass/Services/UpdateService.cs" Link="UpdateService.cs" />
   </ItemGroup>
 </Project>

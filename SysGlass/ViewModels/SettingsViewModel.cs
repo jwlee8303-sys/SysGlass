@@ -68,6 +68,73 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         return $"SysGlass {version}";
     }
 
+    // ── 업데이트 확인 ──
+    private string _updateStatusText = "";
+    private bool _isUpdateBusy;
+    private Services.UpdateInfo? _availableUpdate;
+
+    public string UpdateStatusText { get => _updateStatusText; private set => Set(ref _updateStatusText, value); }
+
+    public bool IsUpdateBusy
+    {
+        get => _isUpdateBusy;
+        private set { if (Set(ref _isUpdateBusy, value)) Raise(nameof(IsUpdateIdle)); }
+    }
+
+    public bool IsUpdateIdle => !_isUpdateBusy;
+
+    public Services.UpdateInfo? AvailableUpdate
+    {
+        get => _availableUpdate;
+        private set { if (Set(ref _availableUpdate, value)) Raise(nameof(HasUpdate)); }
+    }
+
+    public bool HasUpdate => _availableUpdate != null;
+
+    /// <summary>GitHub Releases에서 최신 정식 버전을 확인하고 결과를 상태 문구로 표시한다.</summary>
+    public async Task CheckForUpdateAsync()
+    {
+        if (IsUpdateBusy) return;
+        IsUpdateBusy = true;
+        AvailableUpdate = null;
+        UpdateStatusText = "최신 버전을 확인하는 중…";
+        try
+        {
+            var info = await Services.UpdateService.CheckAsync(TimeSpan.FromSeconds(15));
+            AvailableUpdate = info;
+            UpdateStatusText = info == null
+                ? $"최신 버전을 사용 중입니다. ({Services.UpdateService.CurrentVersion})"
+                : $"새 버전 {info.Version}을 사용할 수 있습니다." + (Services.UpdateService.CanApply ? "" : " (개발 빌드에서는 적용할 수 없습니다)");
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            UpdateStatusText = "업데이트를 확인할 수 없습니다. 인터넷 연결을 확인하세요.";
+        }
+        catch (Exception ex)
+        {
+            Utilities.Logger.Error("업데이트 확인 실패", ex);
+            UpdateStatusText = "업데이트를 확인할 수 없습니다.";
+        }
+        finally { IsUpdateBusy = false; }
+    }
+
+    /// <summary>업데이트를 내려받아 적용한다. 실제 종료·재실행은 runner(메인 창)가 맡는다.</summary>
+    public async Task ApplyUpdateAsync(Func<Services.UpdateInfo, IProgress<double>, Task<bool>> runner)
+    {
+        if (IsUpdateBusy || AvailableUpdate is not { } info) return;
+        IsUpdateBusy = true;
+        UpdateStatusText = "업데이트를 내려받는 중… 0%";
+        var progress = new Progress<double>(p => UpdateStatusText = $"업데이트를 내려받는 중… {p * 100:0}%");
+        try
+        {
+            if (await runner(info, progress))
+                UpdateStatusText = "업데이트를 적용하기 위해 SysGlass를 다시 시작합니다.";
+            else
+                UpdateStatusText = $"새 버전 {info.Version}을 사용할 수 있습니다.";
+        }
+        finally { IsUpdateBusy = false; }
+    }
+
     private void OnControllerChanged()
     {
         Raise(nameof(AlwaysOnTop));

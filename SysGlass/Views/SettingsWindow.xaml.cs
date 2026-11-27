@@ -132,6 +132,18 @@ public partial class SettingsWindow : Window
 
     private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
+    private async void OnCheckUpdate(object sender, RoutedEventArgs e) => await _vm.CheckForUpdateAsync();
+
+    private async void OnApplyUpdate(object sender, RoutedEventArgs e)
+    {
+        if (_vm.AvailableUpdate is not { } info) return;
+        if (MessageBox.Show(this,
+                $"SysGlass {info.Version}(으)로 업데이트할까요?\n\nSysGlass가 종료된 뒤 새 버전으로 다시 실행됩니다. 설정은 그대로 유지됩니다.",
+                "SysGlass 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        if ((Owner as MainWindow ?? Application.Current.MainWindow as MainWindow) is not { } main) return;
+        await _vm.ApplyUpdateAsync((update, progress) => main.RunUpdateAsync(update, this, progress));
+    }
+
     private void OnOpenMemoryLogs(object sender, RoutedEventArgs e) => (Owner as MainWindow ?? Application.Current.MainWindow as MainWindow)?.OpenMemoryLogs();
 
     private void OnReset(object sender, RoutedEventArgs e)

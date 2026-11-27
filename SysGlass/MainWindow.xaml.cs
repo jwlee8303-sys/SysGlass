@@ -54,6 +54,7 @@ namespace SysGlass
 
             Loaded += (_, _) => { _vm.Start(); ClampToWorkArea(); };
             Loaded += async (_, _) => await LoadSystemToolIconsAsync();
+            Loaded += async (_, _) => await CheckUpdateOnStartupAsync();
             // 창 핸들이 만들어진 뒤에만 트레이/단축키/Win32 스타일을 다룬다.
             SourceInitialized += OnSourceInitialized;
             IsVisibleChanged += (_, _) => ApplyClickThrough(); // 핸들/스타일이 바뀌었을 가능성에 대비해 재적용
@@ -63,6 +64,61 @@ namespace SysGlass
         }
 
         private IntPtr Hwnd => new System.Windows.Interop.WindowInteropHelper(this).Handle;
+
+        /// <summary>시작 후 백그라운드에서 최신 버전을 확인하고, 새 버전이 있으면 업데이트 여부를 묻는다. 오프라인·시간 초과는 조용히 넘어간다.</summary>
+        private async Task CheckUpdateOnStartupAsync()
+        {
+            await Task.Run(UpdateService.CleanupLeftovers);
+            if (!UpdateService.CanApply) return; // 개발 빌드에서는 묻지 않는다.
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                var info = await UpdateService.CheckAsync(TimeSpan.FromSeconds(10));
+                if (info == null || !IsLoaded) return;
+
+                var summary = UpdateService.SummarizeNotes(info.Notes, 800);
+                var message = $"새 버전이 있습니다.\n\n현재 버전: {UpdateService.CurrentVersion}\n새 버전: {info.Version}"
+                    + (summary.Length > 0 ? $"\n\n변경 요약:\n{summary}" : "")
+                    + "\n\n지금 업데이트할까요?\n[예] 지금 업데이트 (SysGlass가 종료된 뒤 새 버전으로 다시 실행됩니다)\n[아니요] 나중에";
+                if (MessageBox.Show(this, message, "SysGlass 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.No)
+                    != MessageBoxResult.Yes) return;
+
+                _tray.ShowNotification("SysGlass 업데이트", $"{info.Version} 버전을 내려받는 중입니다. 완료되면 자동으로 다시 실행됩니다.", warning: false);
+                await RunUpdateAsync(info, this, progress: null);
+            }
+            catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException or OperationCanceledException)
+            {
+                // 오프라인·응답 지연: 기존 기능에 영향 없이 넘어간다.
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("시작 시 업데이트 확인 실패", ex);
+            }
+        }
+
+        /// <summary>
+        /// 업데이트 파일을 준비하고 앱을 종료한다(교체 후 자동 재실행). 진행 중인 정밀 추적이 있으면 먼저 확인한다.
+        /// 실패하면 안내 후 false. 설정 창의 [지금 업데이트]와 시작 시 확인이 함께 사용한다.
+        /// </summary>
+        public async Task<bool> RunUpdateAsync(UpdateInfo info, Window owner, IProgress<double>? progress)
+        {
+            if (_vm.Trace.State != Services.Memory.PrecisionTraceService.TraceState.Idle &&
+                MessageBox.Show(owner, "정밀 추적이 진행 중입니다. 업데이트하면 기록이 저장되지 않고 중단됩니다. 계속할까요?",
+                    "SysGlass 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                return false;
+            try
+            {
+                if (!await UpdateService.PrepareAndLaunchAsync(info, progress)) return false; // 이미 진행 중
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(owner, $"업데이트를 진행할 수 없습니다. 현재 버전을 계속 사용합니다.\n\n{ex.Message}",
+                    "SysGlass 업데이트", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            Close(); // 설정 저장 후 종료하면 교체 스크립트가 새 버전을 실행한다.
+            return true;
+        }
 
         private async Task LoadSystemToolIconsAsync()
         {

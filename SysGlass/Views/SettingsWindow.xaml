@@ -116,6 +116,13 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="UpdateButton" TargetType="Button" BasedOn="{StaticResource PlainButton}">
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="OrderButton" TargetType="Button" BasedOn="{StaticResource PlainButton}">
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Width" Value="26"/>
@@ -474,6 +481,16 @@
                     <Expander Header="버전 정보" Style="{StaticResource CardExpander}">
                     <StackPanel>
                         <TextBlock Text="{Binding AppVersionText}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="업데이트 확인" Style="{StaticResource UpdateButton}" Click="OnCheckUpdate"
+                                    IsEnabled="{Binding IsUpdateIdle}"/>
+                            <Button Content="지금 업데이트" Style="{StaticResource UpdateButton}" Click="OnApplyUpdate" Margin="8,0,0,0"
+                                    IsEnabled="{Binding IsUpdateIdle}"
+                                    Visibility="{Binding HasUpdate, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding UpdateStatusText}" Style="{StaticResource Hint}" Margin="0,6,0,0"/>
+                        <TextBlock Text="앱을 시작할 때도 자동으로 확인합니다. 업데이트하면 SysGlass가 종료된 뒤 새 버전으로 다시 실행되며 설정은 그대로 유지됩니다."
+                                   Style="{StaticResource Hint}" Margin="0,4,0,0"/>
                     </StackPanel>
                     </Expander>
                 </Border>
