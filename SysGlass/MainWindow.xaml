@@ -130,12 +130,12 @@
             </Grid>
         </DataTemplate>
         <!-- 아크 게이지: 계기판형 270° 호 가운데에 값, 아래에 이름 표시.
-             크기는 열 수(2·3·4열)에 따라 정하고, 칸이 그보다 좁으면 Viewbox로 줄인다.
+             열 수(2~6열)별 기본 크기로 비율(호 두께·값 글자)을 정하고, Viewbox로 칸 너비에 맞춰 키우거나 줄인다.
+             창을 가로로 늘리면 게이지가 커지며 칸을 채운다(높이는 SizeToContent로 따라 늘어남).
              가운데 값은 호 안쪽 폭을 넘으면 글자를 줄여 호에 닿지 않게 한다 -->
         <DataTemplate x:Key="ArcTile">
             <StackPanel Margin="2,0,2,8" ToolTip="{Binding ToolTip}" Background="Transparent">
-                <Viewbox StretchDirection="DownOnly" HorizontalAlignment="Center"
-                         MaxWidth="{Binding DataContext.ArcTileSize, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Viewbox Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Stretch">
                     <Grid Width="{Binding DataContext.ArcTileSize, RelativeSource={RelativeSource AncestorType=Window}}"
                           Height="{Binding DataContext.ArcTileSize, RelativeSource={RelativeSource AncestorType=Window}}">
                         <views:UsageGauge Kind="Arc" Thickness="5" Value="{Binding Percent}" Fill="{Binding Accent}"/>
